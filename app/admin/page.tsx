@@ -8,24 +8,26 @@ export default async function AdminPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
-  const { data: userData } = await supabase
+  const { data: userRow } = await supabase
     .from('users')
     .select('is_omiflow_admin')
     .eq('id', user.id)
     .single()
 
-  if (!(userData as any)?.is_omiflow_admin) redirect('/dashboard')
+  if (!(userRow as any)?.is_omiflow_admin) redirect('/dashboard')
 
   const serviceClient = createServiceClient()
 
-  const { data: orgs } = await serviceClient
+  const { data: orgsRaw } = await serviceClient
     .from('organizations')
     .select('*, billing_subscriptions(*)')
     .order('created_at', { ascending: false })
 
-  const totalOrgs = orgs?.length || 0
-  const activeOrgs = orgs?.filter(o => o.is_active).length || 0
-  const trialingOrgs = orgs?.filter(o => (o as any).billing_subscriptions?.status === 'trialing').length || 0
+  const orgs = (orgsRaw as any[]) || []
+
+  const totalOrgs = orgs.length
+  const activeOrgs = orgs.filter(o => o.is_active).length
+  const trialingOrgs = orgs.filter(o => o.billing_subscriptions?.status === 'trialing').length
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -76,31 +78,28 @@ export default async function AdminPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {orgs?.map(org => {
-                  const billing = (org as any).billing_subscriptions
-                  return (
-                    <tr key={org.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900">{org.name}</div>
-                        <div className="text-gray-400 text-xs">{org.slug}</div>
-                      </td>
-                      <td className="px-6 py-4 text-gray-600 capitalize">{org.industry?.replace('_', ' ')}</td>
-                      <td className="px-6 py-4 capitalize text-gray-700">{billing?.plan || 'starter'}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${org.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {billing?.status || (org.is_active ? 'active' : 'inactive')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-gray-500">{new Date(org.created_at).toLocaleDateString()}</td>
-                      <td className="px-6 py-4">
-                        <a href={`/admin/organizations/${org.id}`} className="text-omiflow-600 hover:underline text-xs font-medium">Manage →</a>
-                      </td>
-                    </tr>
-                  )
-                })}
+                {orgs.map((org: any) => (
+                  <tr key={org.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-gray-900">{org.name}</div>
+                      <div className="text-gray-400 text-xs">{org.slug}</div>
+                    </td>
+                    <td className="px-6 py-4 text-gray-600 capitalize">{org.industry?.replace('_', ' ')}</td>
+                    <td className="px-6 py-4 capitalize text-gray-700">{org.billing_subscriptions?.plan || 'starter'}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${org.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {org.billing_subscriptions?.status || (org.is_active ? 'active' : 'inactive')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">{new Date(org.created_at).toLocaleDateString()}</td>
+                    <td className="px-6 py-4">
+                      <a href={`/admin/organizations/${org.id}`} className="text-omiflow-600 hover:underline text-xs font-medium">Manage →</a>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-            {(!orgs || orgs.length === 0) && (
+            {orgs.length === 0 && (
               <div className="p-12 text-center text-gray-400">No organizations yet.</div>
             )}
           </div>
