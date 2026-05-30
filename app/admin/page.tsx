@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation'
-import { createServerClientInstance } from '@/lib/supabase-server'
-import { createServiceClient } from '@/lib/supabase'
+import { cookies } from 'next/headers'
+import { createServerClientInstance, createServiceClient } from '@/lib/supabase'
 
 export default async function AdminPage() {
-  const supabase = createServerClientInstance()
+  const cookieStore = cookies()
+  const supabase = createServerClientInstance(cookieStore)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
@@ -13,7 +14,7 @@ export default async function AdminPage() {
     .eq('id', user.id)
     .single()
 
-  if (!userData?.is_omiflow_admin) redirect('/dashboard')
+  if (!(userData as any)?.is_omiflow_admin) redirect('/dashboard')
 
   const serviceClient = createServiceClient()
 
@@ -29,7 +30,6 @@ export default async function AdminPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -46,7 +46,6 @@ export default async function AdminPage() {
           </a>
         </div>
 
-        {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
           {[
             { label: 'Total Organizations', value: totalOrgs },
@@ -60,7 +59,6 @@ export default async function AdminPage() {
           ))}
         </div>
 
-        {/* Organizations Table */}
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900">Organizations</h2>
@@ -87,24 +85,15 @@ export default async function AdminPage() {
                         <div className="text-gray-400 text-xs">{org.slug}</div>
                       </td>
                       <td className="px-6 py-4 text-gray-600 capitalize">{org.industry?.replace('_', ' ')}</td>
+                      <td className="px-6 py-4 capitalize text-gray-700">{billing?.plan || 'starter'}</td>
                       <td className="px-6 py-4">
-                        <span className="capitalize text-gray-700">{billing?.plan || 'starter'}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          org.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${org.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                           {billing?.status || (org.is_active ? 'active' : 'inactive')}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-gray-500">
-                        {new Date(org.created_at).toLocaleDateString()}
-                      </td>
+                      <td className="px-6 py-4 text-gray-500">{new Date(org.created_at).toLocaleDateString()}</td>
                       <td className="px-6 py-4">
-                        <a href={`/admin/organizations/${org.id}`}
-                          className="text-omiflow-600 hover:underline text-xs font-medium">
-                          Manage →
-                        </a>
+                        <a href={`/admin/organizations/${org.id}`} className="text-omiflow-600 hover:underline text-xs font-medium">Manage →</a>
                       </td>
                     </tr>
                   )
@@ -112,9 +101,7 @@ export default async function AdminPage() {
               </tbody>
             </table>
             {(!orgs || orgs.length === 0) && (
-              <div className="p-12 text-center text-gray-400">
-                No organizations yet. Create your first client.
-              </div>
+              <div className="p-12 text-center text-gray-400">No organizations yet.</div>
             )}
           </div>
         </div>
