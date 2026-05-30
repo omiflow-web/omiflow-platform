@@ -35,10 +35,12 @@ export async function POST(request: NextRequest) {
   const { name, industry, ownerEmail, ownerFirstName, ownerLastName, ownerPhone, phoneNumber, practiceAreas } = body
 
   const serviceClient = createServiceClient()
-
   const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')
 
-  const { data: org, error: orgError } = await serviceClient
+  // Use type assertion to bypass strict typing on insert
+  const db = serviceClient as any
+
+  const { data: org, error: orgError } = await db
     .from('organizations')
     .insert({ name, slug, industry: industry || 'immigration_law' })
     .select()
@@ -48,7 +50,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: orgError?.message || 'Failed to create org' }, { status: 500 })
   }
 
-  await serviceClient.rpc('provision_organization', {
+  await db.rpc('provision_organization', {
     org_id: org.id,
     industry_type: industry || 'immigration_law'
   })
@@ -64,29 +66,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
   }
 
-  const { data: ownerRole } = await serviceClient.from('roles').select('id').eq('name', 'owner').single()
+  const { data: ownerRole } = await db.from('roles').select('id').eq('name', 'owner').single()
 
-  await serviceClient.from('users').insert({
+  await db.from('users').insert({
     id: authUser.user.id,
     organization_id: org.id,
-    role_id: (ownerRole as any)?.id,
+    role_id: ownerRole?.id,
     first_name: ownerFirstName,
     last_name: ownerLastName,
     email: ownerEmail,
     phone: ownerPhone
   })
 
-  await serviceClient.from('staff_members').insert({
+  await db.from('staff_members').insert({
     organization_id: org.id,
     user_id: authUser.user.id,
-    role_id: (ownerRole as any)?.id,
+    role_id: ownerRole?.id,
     first_name: ownerFirstName,
     last_name: ownerLastName,
     email: ownerEmail,
     phone: ownerPhone
   })
 
-  await serviceClient.from('organization_settings').update({
+  await db.from('organization_settings').update({
     notification_email: ownerEmail,
     email_summary_recipients: [ownerEmail]
   }).eq('organization_id', org.id)
@@ -99,7 +101,7 @@ export async function POST(request: NextRequest) {
       firstMessage: `Thank you for calling ${name}. I'm the virtual assistant — how can I help you today?`,
       systemPrompt
     })
-    await serviceClient.from('organization_ai_configs').update({
+    await db.from('organization_ai_configs').update({
       vapi_assistant_id: vapiAssistantId
     }).eq('organization_id', org.id)
   } catch (vapiError) {
@@ -107,7 +109,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (phoneNumber) {
-    await serviceClient.from('phone_numbers').insert({
+    await db.from('phone_numbers').insert({
       organization_id: org.id,
       number: phoneNumber,
       is_primary: true,
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  await serviceClient.from('billing_subscriptions').insert({
+  await db.from('billing_subscriptions').insert({
     organization_id: org.id,
     plan: 'starter',
     status: 'trialing'
