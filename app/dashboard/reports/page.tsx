@@ -1,4 +1,4 @@
-import { createServerClientInstance } from '@/lib/supabase'
+import { createServerClientInstance } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { subDays, format, startOfDay, endOfDay } from 'date-fns'
 
