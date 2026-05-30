@@ -1,4 +1,5 @@
-import { createServerClientInstance } from '@/lib/supabase-server'
+import { cookies } from 'next/headers'
+import { createServerClientInstance } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import { formatDistanceToNow } from 'date-fns'
 
@@ -17,7 +18,7 @@ export default async function LeadsPage({
 }: {
   searchParams: { status?: string; priority?: string; q?: string; filter?: string }
 }) {
-  const supabase = createServerClientInstance()
+  const supabase = createServerClientInstance(cookies())
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
