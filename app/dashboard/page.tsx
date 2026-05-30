@@ -1,4 +1,4 @@
-import { createServerClientInstance } from '@/lib/supabase'
+import { createServerClientInstance } from '@/lib/supabase-server'
 import { redirect } from 'next/navigation'
 import { Phone, Users, Clock, AlertTriangle, Calendar, TrendingUp, PhoneCall, PhoneMissed } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
