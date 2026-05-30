@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 224 71.4% 4.1%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 71.4% 4.1%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71.4% 4.1%;
+    --primary: 237 84% 67%;
+    --primary-foreground: 210 20% 98%;
+    --secondary: 220 14.3% 95.9%;
+    --secondary-foreground: 220.9 39.3% 11%;
+    --muted: 220 14.3% 95.9%;
+    --muted-foreground: 220 8.9% 46.1%;
+    --accent: 220 14.3% 95.9%;
+    --accent-foreground: 220.9 39.3% 11%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 237 84% 67%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 224 71.4% 4.1%;
+    --foreground: 210 20% 98%;
+    --card: 224 71.4% 4.1%;
+    --card-foreground: 210 20% 98%;
+    --popover: 224 71.4% 4.1%;
+    --popover-foreground: 210 20% 98%;
+    --primary: 237 84% 67%;
+    --primary-foreground: 210 20% 98%;
+    --secondary: 215 27.9% 16.9%;
+    --secondary-foreground: 210 20% 98%;
+    --muted: 215 27.9% 16.9%;
+    --muted-foreground: 217.9 10.6% 64.9%;
+    --accent: 215 27.9% 16.9%;
+    --accent-foreground: 210 20% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
+    --border: 215 27.9% 16.9%;
+    --input: 215 27.9% 16.9%;
+    --ring: 237 84% 67%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+}
+
+/* Omiflow specific utilities */
+.sentiment-positive { @apply bg-green-100 text-green-800; }
+.sentiment-neutral { @apply bg-gray-100 text-gray-800; }
+.sentiment-concerned { @apply bg-yellow-100 text-yellow-800; }
+.sentiment-distressed { @apply bg-red-100 text-red-800; }
+.sentiment-frustrated { @apply bg-orange-100 text-orange-800; }
+.sentiment-urgent { @apply bg-red-100 text-red-800; }
+.sentiment-confused { @apply bg-blue-100 text-blue-800; }
+
+.priority-low { @apply bg-gray-100 text-gray-700; }
+.priority-medium { @apply bg-blue-100 text-blue-700; }
+.priority-high { @apply bg-yellow-100 text-yellow-700; }
+.priority-critical { @apply bg-red-100 text-red-700; }
+
+.status-new { @apply bg-blue-100 text-blue-700; }
+.status-contacted { @apply bg-purple-100 text-purple-700; }
+.status-consultation_scheduled { @apply bg-yellow-100 text-yellow-700; }
+.status-retained { @apply bg-green-100 text-green-700; }
+.status-lost { @apply bg-gray-100 text-gray-500; }
