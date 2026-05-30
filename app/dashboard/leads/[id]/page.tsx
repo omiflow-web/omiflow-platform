@@ -1,10 +1,11 @@
-import { createServerClientInstance } from '@/lib/supabase-server'
+import { cookies } from 'next/headers'
+import { createServerClientInstance } from '@/lib/supabase'
 import { redirect, notFound } from 'next/navigation'
 import { ArrowLeft, Phone, Mail, Clock, Calendar, MessageSquare } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 
 export default async function LeadProfilePage({ params }: { params: { id: string } }) {
-  const supabase = createServerClientInstance()
+  const supabase = createServerClientInstance(cookies())
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
