@@ -1,10 +1,11 @@
-import { createServerClientInstance } from '@/lib/supabase-server'
+import { cookies } from 'next/headers'
+import { createServerClientInstance } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import { format, startOfMonth, endOfMonth, isToday, isFuture } from 'date-fns'
 import { Calendar, Clock, User } from 'lucide-react'
 
 export default async function CalendarPage() {
-  const supabase = createServerClientInstance()
+  const supabase = createServerClientInstance(cookies())
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
