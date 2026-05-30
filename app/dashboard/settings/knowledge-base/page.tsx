@@ -1,10 +1,11 @@
-import { createServerClientInstance } from '@/lib/supabase-server'
+import { cookies } from 'next/headers'
+import { createServerClientInstance } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import { BookOpen, FileText, Upload } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 export default async function KnowledgeBasePage() {
-  const supabase = createServerClientInstance()
+  const supabase = createServerClientInstance(cookies())
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
