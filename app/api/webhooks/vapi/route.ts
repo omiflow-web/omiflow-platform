@@ -9,7 +9,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { message } = body
 
-    // Only process end-of-call reports
     if (message?.type !== 'end-of-call-report') {
       return NextResponse.json({ received: true })
     }
@@ -24,10 +23,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing call data' }, { status: 400 })
     }
 
-    const supabase = createServiceClient()
+    const db = createServiceClient() as any
 
-    // Find the call record by vapi_call_id
-    const { data: callRecord } = await supabase
+    const { data: callRecord } = await db
       .from('calls')
       .select('id, organization_id, lead_id')
       .eq('vapi_call_id', vapiCallId)
@@ -40,17 +38,15 @@ export async function POST(request: NextRequest) {
 
     const { id: callId, organization_id: organizationId } = callRecord
 
-    // Update call with recording and duration
-    await supabase.from('calls').update({
+    await db.from('calls').update({
       recording_url: recordingUrl,
       duration_seconds: durationSeconds,
       status: 'completed',
       ended_at: new Date().toISOString()
     }).eq('id', callId)
 
-    // Save recording record
     if (recordingUrl) {
-      await supabase.from('recordings').insert({
+      await db.from('recordings').insert({
         organization_id: organizationId,
         call_id: callId,
         url: recordingUrl,
@@ -58,8 +54,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Save transcript
-    await supabase.from('transcripts').insert({
+    await db.from('transcripts').insert({
       organization_id: organizationId,
       call_id: callId,
       content: transcript,
@@ -67,48 +62,28 @@ export async function POST(request: NextRequest) {
       word_count: transcript.split(' ').length
     })
 
-    // Get practice areas for this org
-    const { data: practiceAreas } = await supabase
+    const { data: practiceAreas } = await db
       .from('practice_areas')
       .select('name')
       .eq('organization_id', organizationId)
       .eq('is_active', true)
 
-    const practiceAreaNames = practiceAreas?.map(p => p.name) || []
+    const practiceAreaNames = (practiceAreas || []).map((p: any) => p.name)
 
-    // Run AI processing pipeline
-    const aiResult = await processCallWithAI(
-      transcript,
-      organizationId,
-      callId,
-      practiceAreaNames
-    )
+    const aiResult = await processCallWithAI(transcript, organizationId, callId, practiceAreaNames)
+    const { leadId, isRepeat } = await findOrCreateLead(organizationId, callerNumber, aiResult.callerName, aiResult)
 
-    // Find or create lead
-    const { leadId, isRepeat } = await findOrCreateLead(
-      organizationId,
-      callerNumber,
-      aiResult.callerName,
-      aiResult
-    )
-
-    // Link call to lead
-    await supabase.from('calls').update({ lead_id: leadId }).eq('id', callId)
-
-    // Save all AI results
+    await db.from('calls').update({ lead_id: leadId }).eq('id', callId)
     await saveAIResults(aiResult, organizationId, callId, leadId)
-
-    // Create auto tasks
     await createAutoTasks(organizationId, leadId, callId, aiResult)
 
-    // Get org settings for notifications
-    const { data: settings } = await supabase
+    const { data: settings } = await db
       .from('organization_settings')
       .select('*')
       .eq('organization_id', organizationId)
       .single()
 
-    const { data: org } = await supabase
+    const { data: org } = await db
       .from('organizations')
       .select('name')
       .eq('id', organizationId)
@@ -116,32 +91,17 @@ export async function POST(request: NextRequest) {
 
     const firmName = org?.name || 'The firm'
 
-    // Send summary email to firm
     if (settings?.auto_email_enabled && settings.email_summary_recipients?.length > 0) {
-      await sendCallSummaryEmail(
-        settings.email_summary_recipients,
-        firmName,
-        callerNumber,
-        aiResult,
-        durationSeconds
-      )
+      await sendCallSummaryEmail(settings.email_summary_recipients, firmName, callerNumber, aiResult, durationSeconds)
     }
 
-    // Send confirmation SMS to caller
     if (settings?.auto_sms_enabled && callerNumber !== 'unknown') {
       try {
-        await sendConfirmationSMS(
-          callerNumber,
-          firmName,
-          settings.callback_promise_hours || 2,
-          settings.sms_confirmation_template
-        )
-
-        // Log SMS communication
-        await supabase.from('sms_messages').insert({
+        await sendConfirmationSMS(callerNumber, firmName, settings.callback_promise_hours || 2, settings.sms_confirmation_template)
+        await db.from('sms_messages').insert({
           organization_id: organizationId,
           lead_id: leadId,
-          from_number: process.env.TWILIO_PHONE_NUMBER!,
+          from_number: process.env.TWILIO_PHONE_NUMBER,
           to_number: callerNumber,
           body: settings.sms_confirmation_template || `Thank you for contacting ${firmName}. We will call you back shortly.`,
           status: 'sent',
@@ -149,19 +109,13 @@ export async function POST(request: NextRequest) {
         })
       } catch (smsError) {
         console.error('SMS send failed:', smsError)
-        // Non-fatal — continue
       }
     }
 
-    // Create in-app notification for urgent/critical leads
     if (aiResult.leadQuality === 'critical' || aiResult.sentiment === 'distressed') {
-      const { data: orgUsers } = await supabase
-        .from('users')
-        .select('id')
-        .eq('organization_id', organizationId)
-
+      const { data: orgUsers } = await db.from('users').select('id').eq('organization_id', organizationId)
       for (const user of orgUsers || []) {
-        await supabase.from('notifications').insert({
+        await db.from('notifications').insert({
           organization_id: organizationId,
           user_id: user.id,
           lead_id: leadId,
@@ -174,8 +128,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Log communication record
-    await supabase.from('communications').insert({
+    await db.from('communications').insert({
       organization_id: organizationId,
       lead_id: leadId,
       call_id: callId,
@@ -186,8 +139,7 @@ export async function POST(request: NextRequest) {
       status: 'completed'
     })
 
-    console.log(`✅ Call processed: ${callId} | Lead: ${leadId} | Quality: ${aiResult.leadQuality} | Sentiment: ${aiResult.sentiment}`)
-
+    console.log(`✅ Call processed: ${callId} | Lead: ${leadId} | Quality: ${aiResult.leadQuality}`)
     return NextResponse.json({ success: true, callId, leadId })
   } catch (error) {
     console.error('Vapi webhook error:', error)
