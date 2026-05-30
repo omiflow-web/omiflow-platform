@@ -1,4 +1,5 @@
-import { createServerClientInstance } from '@/lib/supabase-server'
+import { cookies } from 'next/headers'
+import { createServerClientInstance } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import { formatDistanceToNow, format, isPast } from 'date-fns'
 import { CheckSquare, Clock, AlertTriangle } from 'lucide-react'
@@ -8,7 +9,7 @@ export default async function TasksPage({
 }: {
   searchParams: { status?: string; priority?: string }
 }) {
-  const supabase = createServerClientInstance()
+  const supabase = createServerClientInstance(cookies())
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
