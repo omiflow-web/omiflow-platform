@@ -1,10 +1,12 @@
 import { redirect } from 'next/navigation'
-import { createServerClientInstance } from '@/lib/supabase-server'
+import { cookies } from 'next/headers'
+import { createServerClientInstance } from '@/lib/supabase'
 import DashboardSidebar from '@/components/dashboard/sidebar'
 import DashboardHeader from '@/components/dashboard/header'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const supabase = createServerClientInstance()
+  const cookieStore = cookies()
+  const supabase = createServerClientInstance(cookieStore)
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) redirect('/auth/login')
@@ -17,8 +19,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (!userData) redirect('/auth/login')
 
-  // Redirect admins to admin portal
-  if (userData.is_omiflow_admin && !userData.organization_id) {
+  if ((userData as any).is_omiflow_admin && !(userData as any).organization_id) {
     redirect('/admin')
   }
 
