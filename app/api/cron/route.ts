@@ -1,27 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { sendStaffNotificationEmail } from '@/lib/email'
-import { sendStaffSMS } from '@/lib/twilio'
 
 export async function GET(request: NextRequest) {
-  // Verify this is called by Vercel cron
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const supabase = createServiceClient()
+  const db = supabase as any
   const results = { processed: 0, notifications: 0, escalations: 0 }
 
   try {
-    // Get all active organizations with their settings
-    const { data: orgs } = await supabase
+    const { data: orgs } = await db
       .from('organizations')
       .select('id, name')
       .eq('is_active', true)
 
     for (const org of orgs || []) {
-      const { data: settings } = await supabase
+      const { data: settings } = await db
         .from('organization_settings')
         .select('*')
         .eq('organization_id', org.id)
@@ -32,20 +30,19 @@ export async function GET(request: NextRequest) {
       const callbackHours = settings.callback_promise_hours || 2
       const escalationHours = settings.escalation_hours || 24
 
-      // ── Rule 1: Lead not contacted in callback_hours → notify staff ──
+      // Rule 1: Lead not contacted in callback_hours
       const callbackThreshold = new Date()
       callbackThreshold.setHours(callbackThreshold.getHours() - callbackHours)
 
-      const { data: overdueleads } = await supabase
+      const { data: overdueLeads } = await db
         .from('leads')
         .select('id, first_name, last_name, phone, priority, practice_area_id')
         .eq('organization_id', org.id)
         .eq('status', 'new')
         .lt('created_at', callbackThreshold.toISOString())
 
-      for (const lead of overdueleads || []) {
-        // Check no task already exists for this
-        const { data: existingTask } = await supabase
+      for (const lead of overdueLeads || []) {
+        const { data: existingTask } = await db
           .from('tasks')
           .select('id')
           .eq('organization_id', org.id)
@@ -57,7 +54,7 @@ export async function GET(request: NextRequest) {
         if (!existingTask) {
           const leadName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || lead.phone
 
-          await supabase.from('tasks').insert({
+          await db.from('tasks').insert({
             organization_id: org.id,
             lead_id: lead.id,
             title: `⚠️ Overdue callback — ${leadName}`,
@@ -70,12 +67,11 @@ export async function GET(request: NextRequest) {
             trigger_rule: 'overdue_callback'
           })
 
-          // Send notification email
           if (settings.notification_email) {
             await sendStaffNotificationEmail(
               settings.notification_email,
               `Overdue Callback — ${leadName}`,
-              `${leadName} has been waiting over ${callbackHours} hours for a callback. Please contact them immediately.\n\nPhone: ${lead.phone}`,
+              `${leadName} has been waiting over ${callbackHours} hours for a callback.\n\nPhone: ${lead.phone}`,
               org.name
             )
           }
@@ -84,11 +80,11 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // ── Rule 2: Lead not contacted in escalation_hours → escalate ──
+      // Rule 2: Lead not contacted in escalation_hours
       const escalationThreshold = new Date()
       escalationThreshold.setHours(escalationThreshold.getHours() - escalationHours)
 
-      const { data: escalationLeads } = await supabase
+      const { data: escalationLeads } = await db
         .from('leads')
         .select('id, first_name, last_name, phone, priority')
         .eq('organization_id', org.id)
@@ -96,7 +92,7 @@ export async function GET(request: NextRequest) {
         .lt('created_at', escalationThreshold.toISOString())
 
       for (const lead of escalationLeads || []) {
-        const { data: existingEscalation } = await supabase
+        const { data: existingEscalation } = await db
           .from('tasks')
           .select('id')
           .eq('organization_id', org.id)
@@ -107,11 +103,11 @@ export async function GET(request: NextRequest) {
         if (!existingEscalation) {
           const leadName = `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || lead.phone
 
-          await supabase.from('tasks').insert({
+          await db.from('tasks').insert({
             organization_id: org.id,
             lead_id: lead.id,
             title: `🚨 ESCALATION — ${leadName} — ${escalationHours}h without contact`,
-            description: `This lead has been inactive for over ${escalationHours} hours. Escalation required.`,
+            description: `This lead has been inactive for over ${escalationHours} hours.`,
             type: 'escalation',
             priority: 'urgent',
             status: 'pending',
@@ -120,8 +116,7 @@ export async function GET(request: NextRequest) {
             trigger_rule: 'escalation'
           })
 
-          // Update lead priority
-          await supabase.from('leads').update({ priority: 'critical' }).eq('id', lead.id)
+          await db.from('leads').update({ priority: 'critical' }).eq('id', lead.id)
 
           results.escalations++
         }
@@ -130,7 +125,7 @@ export async function GET(request: NextRequest) {
       results.processed++
     }
 
-    console.log(`✅ Cron complete:`, results)
+    console.log('✅ Cron complete:', results)
     return NextResponse.json({ success: true, ...results })
   } catch (error) {
     console.error('Cron error:', error)
