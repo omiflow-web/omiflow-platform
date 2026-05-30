@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClientInstance, createServiceClient } from '@/lib/supabase'
+import { createServerClientInstance } from '@/lib/supabase-server'
+import { createServiceClient } from '@/lib/supabase'
 import { createVapiAssistant, buildSystemPrompt } from '@/lib/vapi'
 import { sendWelcomeEmail } from '@/lib/email'
 
