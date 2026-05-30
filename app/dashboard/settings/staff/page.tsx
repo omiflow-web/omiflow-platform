@@ -1,9 +1,10 @@
-import { createServerClientInstance } from '@/lib/supabase-server'
+import { cookies } from 'next/headers'
+import { createServerClientInstance } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import { Users, Mail, Phone } from 'lucide-react'
 
 export default async function StaffPage() {
-  const supabase = createServerClientInstance()
+  const supabase = createServerClientInstance(cookies())
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
