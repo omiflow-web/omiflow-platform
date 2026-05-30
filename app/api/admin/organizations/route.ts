@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClientInstance } from '@/lib/supabase-server'
-import { createServiceClient } from '@/lib/supabase'
+import { cookies } from 'next/headers'
+import { createServerClientInstance, createServiceClient } from '@/lib/supabase'
 import { createVapiAssistant, buildSystemPrompt } from '@/lib/vapi'
 import { sendWelcomeEmail } from '@/lib/email'
 
 export async function GET() {
-  const supabase = createServerClientInstance()
+  const cookieStore = cookies()
+  const supabase = createServerClientInstance(cookieStore)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -22,7 +23,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createServerClientInstance()
+  const cookieStore = cookies()
+  const supabase = createServerClientInstance(cookieStore)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
