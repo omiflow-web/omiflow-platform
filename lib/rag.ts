@@ -36,7 +36,7 @@ export async function searchAndAnswer(
     `[Source ${i + 1}: ${c.document_title}]\n${c.content}`
   ).join('\n\n---\n\n')
 
-  const sources = [...new Set(chunks.map((c: any) => c.document_title))] as string[]
+  const sources = Array.from(new Set(chunks.map((c: any) => c.document_title))) as string[]
 
   // Use Claude to generate a precise answer
   const response = await anthropic.messages.create({
