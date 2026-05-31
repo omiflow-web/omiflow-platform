@@ -12,7 +12,7 @@ export default async function LeadProfilePage({ params }: { params: { id: string
   const { data: userData } = await supabase.from('users').select('organization_id').eq('id', user.id).single()
   if (!userData?.organization_id) redirect('/auth/login')
 
-  const orgId = userData.organization_id
+  const orgId = (userData as any)?.organization_id
 
   const { data: lead } = await supabase
     .from('leads')
