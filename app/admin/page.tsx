@@ -1,29 +1,35 @@
-import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
-import { createServerClientInstance, createServiceClient } from '@/lib/supabase'
+'use client'
 
-export default async function AdminPage() {
-  const cookieStore = cookies()
-  const supabase = createServerClientInstance(cookieStore)
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/auth/login')
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
-  const { data: userRow } = await supabase
-    .from('users')
-    .select('is_omiflow_admin')
-    .eq('id', user.id)
-    .single()
+export default function AdminPage() {
+  const [orgs, setOrgs] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+  const supabase = createClient()
 
-  if (!(userRow as any)?.is_omiflow_admin) redirect('/dashboard')
+  useEffect(() => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/auth/login'); return }
 
-  const serviceClient = createServiceClient()
+      const res = await fetch('/api/admin/organizations')
+      if (res.ok) {
+        const data = await res.json()
+        setOrgs(data.organizations || [])
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
 
-  const { data: orgsRaw } = await serviceClient
-    .from('organizations')
-    .select('*, billing_subscriptions(*)')
-    .order('created_at', { ascending: false })
-
-  const orgs = (orgsRaw as any[]) || []
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.push('/auth/login')
+    router.refresh()
+  }
 
   const totalOrgs = orgs.length
   const activeOrgs = orgs.filter(o => o.is_active).length
@@ -42,10 +48,16 @@ export default async function AdminPage() {
             </div>
             <p className="text-sm text-gray-500">Platform administration</p>
           </div>
-          <a href="/admin/organizations/new"
-            className="bg-omiflow-600 hover:bg-omiflow-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-            + New Organization
-          </a>
+          <div className="flex gap-3">
+            <a href="/admin/organizations/new"
+              className="bg-omiflow-600 hover:bg-omiflow-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              + New Organization
+            </a>
+            <button onClick={handleLogout}
+              className="border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+              Log out
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-4">
@@ -66,40 +78,44 @@ export default async function AdminPage() {
             <h2 className="font-semibold text-gray-900">Organizations</h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-6 py-3 font-medium text-gray-500">Firm</th>
-                  <th className="text-left px-6 py-3 font-medium text-gray-500">Industry</th>
-                  <th className="text-left px-6 py-3 font-medium text-gray-500">Plan</th>
-                  <th className="text-left px-6 py-3 font-medium text-gray-500">Status</th>
-                  <th className="text-left px-6 py-3 font-medium text-gray-500">Created</th>
-                  <th className="px-6 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {orgs.map((org: any) => (
-                  <tr key={org.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900">{org.name}</div>
-                      <div className="text-gray-400 text-xs">{org.slug}</div>
-                    </td>
-                    <td className="px-6 py-4 text-gray-600 capitalize">{org.industry?.replace('_', ' ')}</td>
-                    <td className="px-6 py-4 capitalize text-gray-700">{org.billing_subscriptions?.plan || 'starter'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${org.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {org.billing_subscriptions?.status || (org.is_active ? 'active' : 'inactive')}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">{new Date(org.created_at).toLocaleDateString()}</td>
-                    <td className="px-6 py-4">
-                      <a href={`/admin/organizations/${org.id}`} className="text-omiflow-600 hover:underline text-xs font-medium">Manage →</a>
-                    </td>
+            {loading ? (
+              <div className="p-12 text-center text-gray-400 text-sm">Loading...</div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50">
+                    <th className="text-left px-6 py-3 font-medium text-gray-500">Firm</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-500">Industry</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-500">Plan</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-500">Status</th>
+                    <th className="text-left px-6 py-3 font-medium text-gray-500">Created</th>
+                    <th className="px-6 py-3" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {orgs.length === 0 && (
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {orgs.map((org: any) => (
+                    <tr key={org.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-gray-900">{org.name}</div>
+                        <div className="text-gray-400 text-xs">{org.slug}</div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600 capitalize">{org.industry?.replace(/_/g, ' ')}</td>
+                      <td className="px-6 py-4 capitalize text-gray-700">{org.billing_subscriptions?.plan || 'starter'}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${org.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {org.billing_subscriptions?.status || (org.is_active ? 'active' : 'inactive')}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-500">{new Date(org.created_at).toLocaleDateString()}</td>
+                      <td className="px-6 py-4">
+                        <a href={`/admin/organizations/${org.id}`} className="text-omiflow-600 hover:underline text-xs font-medium">Manage →</a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {!loading && orgs.length === 0 && (
               <div className="p-12 text-center text-gray-400">No organizations yet.</div>
             )}
           </div>
