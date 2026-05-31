@@ -3,6 +3,9 @@ import { AIProcessingResult } from './ai-pipeline'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+const FROM_NOTIFICATIONS = 'Omiflow <notifications@omiflow.co.uk>'
+const FROM_HELLO = 'Omiflow <hello@omiflow.co.uk>'
+
 export async function sendCallSummaryEmail(
   recipients: string[],
   firmName: string,
@@ -14,7 +17,7 @@ export async function sendCallSummaryEmail(
 
   const duration = `${Math.floor(callDurationSeconds / 60)}m ${callDurationSeconds % 60}s`
   const priorityLabel = result.leadQuality.toUpperCase()
-  const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })
+  const now = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' })
 
   const body = `NEW ENQUIRY — ${firmName}
 ${now}
@@ -53,10 +56,10 @@ ${result.keyPoints.map(p => `• ${p}`).join('\n')}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Powered by Omiflow — No lead is ever forgotten.
-View full call details at app.omiflow.co`
+View full call details at ${process.env.NEXT_PUBLIC_APP_URL}`
 
   await resend.emails.send({
-    from: 'Omiflow <notifications@omiflow.co>',
+    from: FROM_NOTIFICATIONS,
     to: recipients,
     subject: `[${priorityLabel}] New ${result.practiceArea} Enquiry — ${result.callerName || callerNumber}`,
     text: body
@@ -70,10 +73,10 @@ export async function sendStaffNotificationEmail(
   firmName: string
 ): Promise<void> {
   await resend.emails.send({
-    from: 'Omiflow <notifications@omiflow.co>',
+    from: FROM_NOTIFICATIONS,
     to: recipientEmail,
     subject: `[Omiflow] ${subject}`,
-    text: `${message}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nPowered by Omiflow for ${firmName}\napp.omiflow.co`
+    text: `${message}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nPowered by Omiflow for ${firmName}\n${process.env.NEXT_PUBLIC_APP_URL}`
   })
 }
 
@@ -83,7 +86,7 @@ export async function sendWelcomeEmail(
   tempPassword: string
 ): Promise<void> {
   await resend.emails.send({
-    from: 'Omiflow <hello@omiflow.co>',
+    from: FROM_HELLO,
     to: recipientEmail,
     subject: `Welcome to Omiflow — Your ${firmName} portal is ready`,
     text: `Welcome to Omiflow.
