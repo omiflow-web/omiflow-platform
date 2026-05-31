@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Phone, Users, MessageSquare,
   Calendar, CheckSquare, BarChart3, Settings,
-  BookOpen, LogOut, Bot, Zap
+  BookOpen, LogOut, Bot, Zap, CreditCard
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 
@@ -17,6 +17,7 @@ const navItems = [
   { href: '/dashboard/calendar', label: 'Calendar', icon: Calendar },
   { href: '/dashboard/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/dashboard/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
 ]
 
 const settingsItems = [
