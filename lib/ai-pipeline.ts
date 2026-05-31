@@ -36,51 +36,51 @@ export async function processCallWithAI(
 
   const prompt = `You are an AI assistant processing a call transcript for a law firm intake system.
 
-Analyze this call transcript and return a JSON object with the following fields:
+Analyse this call transcript and return a JSON object with the fields below.
 
 TRANSCRIPT:
 ${transcript}
 
 AVAILABLE PRACTICE AREAS FOR THIS FIRM:
-${practiceAreasList}
+${practiceAreasList || 'General Enquiry'}
 
 Return ONLY valid JSON with these exact fields:
 {
   "summary": "2-3 sentence plain English summary of the call",
-  "keyPoints": ["array", "of", "key", "points"],
-  "actionItems": ["array", "of", "action", "items"],
+  "keyPoints": ["array", "of", "key", "points", "from", "call"],
+  "actionItems": ["array", "of", "recommended", "action", "items"],
   "sentiment": "one of: positive, neutral, concerned, distressed, frustrated, urgent, confused",
   "sentimentScore": 0.0 to 1.0,
-  "sentimentReasoning": "brief explanation of sentiment",
+  "sentimentReasoning": "brief explanation of detected sentiment",
   "practiceArea": "most relevant practice area from the list provided",
   "practiceAreaConfidence": 0.0 to 1.0,
-  "practiceAreaReasoning": "why this practice area",
+  "practiceAreaReasoning": "why this practice area was selected",
   "leadQuality": "one of: low, medium, high, critical",
   "leadScore": 0 to 100,
   "urgencyScore": 0 to 100,
-  "leadReasoning": "why this lead quality score",
-  "recommendation": "plain English recommended next action",
+  "leadReasoning": "why this lead quality score was given",
+  "recommendation": "plain English recommended next action for the firm",
   "actionType": "one of: call_within_1_hour, call_within_24_hours, schedule_consultation, send_information, escalate, no_action",
   "dueByHours": number of hours until action is due,
-  "callerName": "extracted caller name or null",
-  "callerCallbackNumber": "extracted callback number or null",
-  "callerReason": "main reason caller contacted the firm"
+  "callerName": "extracted caller full name or null",
+  "callerCallbackNumber": "extracted callback phone number or null",
+  "callerReason": "main reason caller contacted the firm in one sentence"
 }
 
-Lead quality scoring guide:
-- critical: Urgent legal matter, clear intent to hire, time-sensitive situation (deportation, visa expiry, court date)
-- high: Clear legal need, motivated to proceed, specific matter described
-- medium: General enquiry, exploring options, less urgency
-- low: Wrong number, just browsing, very general question
+Lead quality scoring:
+- critical: Urgent legal matter, deportation, court date, visa expiry, clear intent to hire immediately
+- high: Clear legal need, motivated to proceed, specific matter described in detail
+- medium: General enquiry, exploring options, considering multiple firms
+- low: Wrong number, very vague, not ready to proceed, unlikely to convert
 
 Sentiment guide:
-- distressed: Crying, very upset, scared, mentions crisis
-- urgent: Time-sensitive language, deadline mentioned, very motivated
-- frustrated: Annoyed, has tried before, feels ignored
-- concerned: Worried, anxious but calm
-- positive: Upbeat, just gathering information
-- neutral: Matter of fact, no strong emotion
-- confused: Unsure what they need, lots of questions`
+- distressed: Crying, very upset, frightened, mentions crisis or emergency
+- urgent: Time-sensitive language, deadline mentioned, highly motivated
+- frustrated: Annoyed, tried before, feels ignored or let down
+- concerned: Worried but calm, anxious about outcome
+- positive: Upbeat, confident, just gathering information
+- neutral: Matter-of-fact, no strong emotion
+- confused: Unsure what they need, asking many basic questions`
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -91,7 +91,9 @@ Sentiment guide:
   const content = response.content[0]
   if (content.type !== 'text') throw new Error('Unexpected response type from AI')
 
-  const result = JSON.parse(content.text) as AIProcessingResult
+  // Clean and parse JSON
+  const jsonText = content.text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+  const result = JSON.parse(jsonText) as AIProcessingResult
   return result
 }
 
@@ -101,51 +103,46 @@ export async function saveAIResults(
   callId: string,
   leadId: string | null
 ): Promise<void> {
-  const supabase = createServiceClient()
+  const db = createServiceClient() as any
 
-  // Save summary
-  await supabase.from('summaries').insert({
-    organization_id: organizationId,
-    call_id: callId,
-    content: result.summary,
-    key_points: result.keyPoints,
-    action_items: result.actionItems
-  })
-
-  // Save sentiment
-  await supabase.from('sentiment_scores').insert({
-    organization_id: organizationId,
-    call_id: callId,
-    sentiment: result.sentiment,
-    score: result.sentimentScore,
-    reasoning: result.sentimentReasoning
-  })
-
-  // Save lead score
-  await supabase.from('lead_scores').insert({
-    organization_id: organizationId,
-    call_id: callId,
-    lead_id: leadId,
-    quality: result.leadQuality,
-    score: result.leadScore,
-    urgency_score: result.urgencyScore,
-    reasoning: result.leadReasoning
-  })
-
-  // Save classification
-  await supabase.from('call_classifications').insert({
-    organization_id: organizationId,
-    call_id: callId,
-    practice_area_name: result.practiceArea,
-    confidence: result.practiceAreaConfidence,
-    reasoning: result.practiceAreaReasoning
-  })
+  await Promise.all([
+    db.from('summaries').insert({
+      organization_id: organizationId,
+      call_id: callId,
+      content: result.summary,
+      key_points: result.keyPoints,
+      action_items: result.actionItems
+    }),
+    db.from('sentiment_scores').insert({
+      organization_id: organizationId,
+      call_id: callId,
+      sentiment: result.sentiment,
+      score: result.sentimentScore,
+      reasoning: result.sentimentReasoning
+    }),
+    db.from('lead_scores').insert({
+      organization_id: organizationId,
+      call_id: callId,
+      lead_id: leadId,
+      quality: result.leadQuality,
+      score: result.leadScore,
+      urgency_score: result.urgencyScore,
+      reasoning: result.leadReasoning
+    }),
+    db.from('call_classifications').insert({
+      organization_id: organizationId,
+      call_id: callId,
+      practice_area_name: result.practiceArea,
+      confidence: result.practiceAreaConfidence,
+      reasoning: result.practiceAreaReasoning
+    })
+  ])
 
   // Save follow-up recommendation
   const dueBy = new Date()
   dueBy.setHours(dueBy.getHours() + result.dueByHours)
 
-  await supabase.from('follow_up_recommendations').insert({
+  await db.from('follow_up_recommendations').insert({
     organization_id: organizationId,
     call_id: callId,
     lead_id: leadId,
@@ -154,11 +151,10 @@ export async function saveAIResults(
     due_by: dueBy.toISOString()
   })
 
-  // Update lead priority based on AI scores
+  // Update lead priority and last contact
   if (leadId) {
-    const priority = result.leadQuality
-    await supabase.from('leads').update({
-      priority,
+    await db.from('leads').update({
+      priority: result.leadQuality,
       last_contact_at: new Date().toISOString()
     }).eq('id', leadId)
   }
@@ -170,10 +166,10 @@ export async function findOrCreateLead(
   callerName: string | null,
   result: AIProcessingResult
 ): Promise<{ leadId: string; isRepeat: boolean }> {
-  const supabase = createServiceClient()
+  const db = createServiceClient() as any
 
   // Check for existing lead with this phone number
-  const { data: existingLead } = await supabase
+  const { data: existingLead } = await db
     .from('leads')
     .select('id, is_repeat_caller')
     .eq('organization_id', organizationId)
@@ -183,8 +179,7 @@ export async function findOrCreateLead(
     .single()
 
   if (existingLead) {
-    // Update existing lead
-    await supabase.from('leads').update({
+    await db.from('leads').update({
       is_repeat_caller: true,
       last_contact_at: new Date().toISOString(),
       priority: result.leadQuality
@@ -193,8 +188,8 @@ export async function findOrCreateLead(
     return { leadId: existingLead.id, isRepeat: true }
   }
 
-  // Find practice area ID
-  const { data: practiceArea } = await supabase
+  // Find matching practice area
+  const { data: practiceArea } = await db
     .from('practice_areas')
     .select('id')
     .eq('organization_id', organizationId)
@@ -203,11 +198,11 @@ export async function findOrCreateLead(
     .single()
 
   // Parse caller name
-  const nameParts = (result.callerName || callerName || '').split(' ')
+  const nameParts = (result.callerName || callerName || '').trim().split(' ')
   const firstName = nameParts[0] || null
   const lastName = nameParts.slice(1).join(' ') || null
 
-  const { data: newLead, error } = await supabase
+  const { data: newLead, error } = await db
     .from('leads')
     .insert({
       organization_id: organizationId,
@@ -227,8 +222,7 @@ export async function findOrCreateLead(
 
   if (error || !newLead) throw new Error(`Failed to create lead: ${error?.message}`)
 
-  // Log status change
-  await supabase.from('lead_statuses').insert({
+  await db.from('lead_statuses').insert({
     organization_id: organizationId,
     lead_id: newLead.id,
     status: 'new'
@@ -243,10 +237,9 @@ export async function createAutoTasks(
   callId: string,
   result: AIProcessingResult
 ): Promise<void> {
-  const supabase = createServiceClient()
+  const db = createServiceClient() as any
 
-  // Get settings for due time
-  const { data: settings } = await supabase
+  const { data: settings } = await db
     .from('organization_settings')
     .select('callback_promise_hours, auto_task_creation')
     .eq('organization_id', organizationId)
@@ -262,11 +255,13 @@ export async function createAutoTasks(
                    result.urgencyScore > 50 ? 'high' :
                    result.urgencyScore > 25 ? 'medium' : 'low'
 
-  await supabase.from('tasks').insert({
+  const callerDisplay = result.callerName || 'caller'
+
+  await db.from('tasks').insert({
     organization_id: organizationId,
     lead_id: leadId,
     call_id: callId,
-    title: `Call back ${result.callerName || 'caller'} — ${result.practiceArea}`,
+    title: `Call back ${callerDisplay} — ${result.practiceArea}`,
     description: result.recommendation,
     type: 'callback',
     priority,
