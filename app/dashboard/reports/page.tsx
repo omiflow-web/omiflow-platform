@@ -1,19 +1,18 @@
 import { cookies } from 'next/headers'
 import { createServerClientInstance } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
-import { subDays, format, startOfDay, endOfDay } from 'date-fns'
+import { subDays } from 'date-fns'
 
 export default async function ReportsPage() {
-  const supabase = createServerClientInstance(cookies())
+  const cookieStore = cookies()
+  const supabase = createServerClientInstance(cookieStore)
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
   const { data: userData } = await supabase.from('users').select('organization_id').eq('id', user.id).single()
-  if (!userData?.organization_id) redirect('/auth/login')
-
   const orgId = (userData as any)?.organization_id
+  if (!orgId) redirect('/auth/login')
 
-  // Get stats for last 30 days
   const thirtyDaysAgo = subDays(new Date(), 30).toISOString()
 
   const [callsRes, leadsRes, tasksRes, sentimentRes, practiceAreaRes] = await Promise.all([
@@ -24,20 +23,18 @@ export default async function ReportsPage() {
     supabase.from('call_classifications').select('practice_area_name').eq('organization_id', orgId).gte('created_at', thirtyDaysAgo)
   ])
 
-  const calls = callsRes.data || []
-  const leads = leadsRes.data || []
-  const tasks = tasksRes.data || []
-  const sentiments = sentimentRes.data || []
-  const classifications = practiceAreaRes.data || []
+  const calls: any[] = callsRes.data || []
+  const leads: any[] = leadsRes.data || []
+  const tasks: any[] = tasksRes.data || []
+  const sentiments: any[] = sentimentRes.data || []
+  const classifications: any[] = practiceAreaRes.data || []
 
-  // Calculate metrics
   const totalCalls = calls.length
   const aiHandled = calls.filter(c => c.handled_by === 'ai').length
   const humanHandled = calls.filter(c => c.handled_by === 'human').length
   const aiRate = totalCalls > 0 ? Math.round((aiHandled / totalCalls) * 100) : 0
-
   const avgDuration = calls.length > 0
-    ? Math.round(calls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) / calls.length)
+    ? Math.round(calls.reduce((sum, c) => sum + (Number(c.duration_seconds) || 0), 0) / calls.length)
     : 0
 
   const retainedLeads = leads.filter(l => l.status === 'retained').length
@@ -47,20 +44,19 @@ export default async function ReportsPage() {
   const pendingTasks = tasks.filter(t => t.status === 'pending').length
   const completedTasks = tasks.filter(t => t.status === 'completed').length
 
-  // Sentiment breakdown
-  const sentimentCounts = sentiments.reduce((acc: Record<string, number>, s) => {
+  const sentimentCounts: Record<string, number> = sentiments.reduce((acc: Record<string, number>, s) => {
     acc[s.sentiment] = (acc[s.sentiment] || 0) + 1
     return acc
   }, {})
 
-  // Practice area breakdown
-  const practiceAreaCounts = classifications.reduce((acc: Record<string, number>, c) => {
+  const practiceAreaCounts: Record<string, number> = classifications.reduce((acc: Record<string, number>, c) => {
     if (c.practice_area_name) acc[c.practice_area_name] = (acc[c.practice_area_name] || 0) + 1
     return acc
   }, {})
 
-  const topPracticeAreas = Object.entries(practiceAreaCounts)
-    .sort(([, a], [, b]) => (b as number) - (a as number))
+  const topPracticeAreas: [string, number][] = Object.entries(practiceAreaCounts)
+    .map(([name, count]): [string, number] => [name, count as number])
+    .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
 
   return (
@@ -70,12 +66,11 @@ export default async function ReportsPage() {
         <p className="text-sm text-gray-500 mt-0.5">Last 30 days performance</p>
       </div>
 
-      {/* Key metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Total Calls', value: totalCalls, sub: 'Last 30 days' },
           { label: 'AI Handle Rate', value: `${aiRate}%`, sub: `${aiHandled} of ${totalCalls} calls` },
-          { label: 'Avg Call Duration', value: `${Math.floor(avgDuration / 60)}m ${avgDuration % 60}s`, sub: 'AI calls only' },
+          { label: 'Avg Call Duration', value: `${Math.floor(avgDuration / 60)}m ${avgDuration % 60}s`, sub: 'AI calls' },
           { label: 'Lead Retention Rate', value: `${retainRate}%`, sub: `${retainedLeads} retained` },
         ].map(metric => (
           <div key={metric.label} className="bg-white rounded-xl border border-gray-100 p-5">
@@ -87,7 +82,6 @@ export default async function ReportsPage() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Call breakdown */}
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <h2 className="font-semibold text-gray-900 text-sm mb-4">Call Handling Breakdown</h2>
           <div className="space-y-3">
@@ -103,7 +97,7 @@ export default async function ReportsPage() {
                 </div>
                 <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                   <div
-                    className={`h-full ${item.color} rounded-full transition-all`}
+                    className={`h-full ${item.color} rounded-full`}
                     style={{ width: `${totalCalls > 0 ? (item.value / totalCalls) * 100 : 0}%` }}
                   />
                 </div>
@@ -112,31 +106,32 @@ export default async function ReportsPage() {
           </div>
         </div>
 
-        {/* Sentiment breakdown */}
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <h2 className="font-semibold text-gray-900 text-sm mb-4">Caller Sentiment (30 days)</h2>
           <div className="space-y-2">
-            {Object.entries(sentimentCounts).sort(([, a], [, b]) => (b as number) - (a as number)).map(([sentiment, count]) => (
-              <div key={sentiment} className="flex items-center justify-between">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium sentiment-${sentiment}`}>
-                  {sentiment}
-                </span>
-                <div className="flex items-center gap-2">
-                  <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-omiflow-500 rounded-full"
-                      style={{ width: `${sentiments.length > 0 ? (count / sentiments.length) * 100 : 0}%` }}
-                    />
+            {Object.entries(sentimentCounts).sort((a, b) => b[1] - a[1]).map(([sentiment, count]) => {
+              const c = count as number
+              return (
+                <div key={sentiment} className="flex items-center justify-between">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium sentiment-${sentiment}`}>
+                    {sentiment}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-omiflow-500 rounded-full"
+                        style={{ width: `${sentiments.length > 0 ? (c / sentiments.length) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500 w-6 text-right">{c}</span>
                   </div>
-                  <span className="text-xs text-gray-500 w-6 text-right">{count}</span>
                 </div>
-              </div>
-            ))}
+              )
+            })}
             {sentiments.length === 0 && <p className="text-sm text-gray-400">No data yet</p>}
           </div>
         </div>
 
-        {/* Top practice areas */}
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <h2 className="font-semibold text-gray-900 text-sm mb-4">Top Practice Areas</h2>
           <div className="space-y-3">
@@ -158,7 +153,6 @@ export default async function ReportsPage() {
           </div>
         </div>
 
-        {/* Task completion */}
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <h2 className="font-semibold text-gray-900 text-sm mb-4">Task Status</h2>
           <div className="space-y-3">
