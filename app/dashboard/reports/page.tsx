@@ -11,7 +11,7 @@ export default async function ReportsPage() {
   const { data: userData } = await supabase.from('users').select('organization_id').eq('id', user.id).single()
   if (!userData?.organization_id) redirect('/auth/login')
 
-  const orgId = userData.organization_id
+  const orgId = (userData as any)?.organization_id
 
   // Get stats for last 30 days
   const thirtyDaysAgo = subDays(new Date(), 30).toISOString()
