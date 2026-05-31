@@ -152,10 +152,6 @@ export default function AutomationPage() {
           ))}
         </div>
       </div>
-
-      <div className="bg-omiflow-50 border border-omiflow-100 rounded-xl p-4 text-sm text-omiflow-800">
-        <strong>How it works:</strong> The automation engine runs once per day on Vercel's free plan, or every 15 minutes on a paid plan. Every rule checks all your leads and appointments and fires only once per lead — it won't send duplicate alerts.
-      </div>
     </div>
   )
 }
