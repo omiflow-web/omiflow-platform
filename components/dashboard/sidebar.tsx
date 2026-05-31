@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Phone, Users, MessageSquare,
   Calendar, CheckSquare, BarChart3, Settings,
-  BookOpen, LogOut, Bot
+  BookOpen, LogOut, Bot, Zap
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 
@@ -23,6 +23,7 @@ const settingsItems = [
   { href: '/dashboard/settings/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
   { href: '/dashboard/settings/staff', label: 'Staff', icon: Users },
   { href: '/dashboard/settings/ai-config', label: 'AI Config', icon: Bot },
+  { href: '/dashboard/settings/automation', label: 'Automation', icon: Zap },
 ]
 
 export default function DashboardSidebar({ user, org }: { user: any; org: any }) {
