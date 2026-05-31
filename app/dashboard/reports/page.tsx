@@ -88,7 +88,7 @@ export default async function ReportsPage() {
             {[
               { label: '🤖 AI Handled', value: aiHandled, color: 'bg-purple-500' },
               { label: '👤 Human Answered', value: humanHandled, color: 'bg-green-500' },
-              { label: '📵 Missed / Other', value: totalCalls - aiHandled - humanHandled, color: 'bg-gray-300' }
+              { label: '📵 Rang out / Error', value: totalCalls - aiHandled - humanHandled, color: 'bg-gray-300' }
             ].map(item => (
               <div key={item.label}>
                 <div className="flex justify-between text-sm mb-1">
