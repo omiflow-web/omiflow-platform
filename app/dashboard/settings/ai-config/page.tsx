@@ -1,26 +1,74 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Bot, Save } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Bot, Save, Check } from 'lucide-react'
 
 export default function AIConfigPage() {
-  const [config, setConfig] = useState<any>(null)
   const [settings, setSettings] = useState<any>(null)
+  const [aiConfig, setAiConfig] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
 
-  // In Phase 2 this will load/save via API
   useEffect(() => {
-    setLoading(false)
+    fetch('/api/settings').then(r => r.json()).then(d => {
+      setSettings(d.settings)
+      setAiConfig(d.aiConfig)
+      setLoading(false)
+    })
   }, [])
+
+  async function saveAIConfig() {
+    setSaving(true)
+    setError('')
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'ai_config', data: aiConfig })
+    })
+    if (res.ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } else {
+      setError('Failed to save — please try again')
+    }
+    setSaving(false)
+  }
+
+  async function saveSettings() {
+    setSaving(true)
+    setError('')
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'settings', data: settings })
+    })
+    if (res.ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } else {
+      setError('Failed to save — please try again')
+    }
+    setSaving(false)
+  }
+
+  if (loading) return <div className="p-8 text-gray-400 text-sm">Loading...</div>
 
   return (
     <div className="space-y-6 animate-fade-in max-w-3xl">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">AI Configuration</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Configure your AI receptionist's behaviour and voice</p>
+        <p className="text-sm text-gray-500 mt-0.5">Configure your AI receptionist's behaviour, voice, and automation rules</p>
       </div>
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>}
+
+      {saved && (
+        <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-4 py-3 flex items-center gap-2">
+          <Check className="w-4 h-4" /> Changes saved and synced to your AI receptionist
+        </div>
+      )}
 
       {/* Status */}
       <div className="bg-white rounded-xl border border-gray-100 p-5">
@@ -29,103 +77,173 @@ export default function AIConfigPage() {
             <Bot className="w-5 h-5 text-purple-600" />
           </div>
           <div>
-            <div className="font-semibold text-gray-900">AI Receptionist</div>
-            <div className="text-xs text-green-600 font-medium">● Active</div>
+            <div className="font-semibold text-gray-900">{aiConfig?.assistant_name || 'AI Receptionist'}</div>
+            <div className={`text-xs font-medium flex items-center gap-1 ${aiConfig?.vapi_assistant_id ? 'text-green-600' : 'text-yellow-600'}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current inline-block" />
+              {aiConfig?.vapi_assistant_id ? 'Connected to Vapi' : 'Not yet connected'}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Config fields */}
+      {/* Receptionist Settings */}
       <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
         <h2 className="font-semibold text-gray-900">Receptionist Settings</h2>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Assistant Name</label>
-          <input
+          <input value={aiConfig?.assistant_name || ''} onChange={e => setAiConfig((p: any) => ({ ...p, assistant_name: e.target.value }))}
             className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500"
-            defaultValue="AI Receptionist"
             placeholder="AI Receptionist" />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Greeting Message</label>
-          <input
+          <input value={aiConfig?.greeting_message || ''} onChange={e => setAiConfig((p: any) => ({ ...p, greeting_message: e.target.value }))}
             className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500"
-            placeholder="Thank you for calling [Firm Name]. I'm the virtual assistant — how can I help?" />
-          <p className="text-xs text-gray-400 mt-1">Use [Firm Name] as a placeholder</p>
+            placeholder="Thank you for calling. I'm the virtual assistant — how can I help?" />
+          <p className="text-xs text-gray-400 mt-1">First thing the AI says when a caller connects</p>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Voice</label>
-          <select className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500">
+          <select value={aiConfig?.voice_id || 'jennifer'} onChange={e => setAiConfig((p: any) => ({ ...p, voice_id: e.target.value }))}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500">
             <option value="jennifer">Jennifer (Female, US)</option>
             <option value="rachel">Rachel (Female, US)</option>
             <option value="adam">Adam (Male, US)</option>
             <option value="josh">Josh (Male, US)</option>
+            <option value="bella">Bella (Female, UK)</option>
+            <option value="charlie">Charlie (Male, UK)</option>
           </select>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Max Call Duration</label>
-          <select className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500">
-            <option value="300">5 minutes</option>
-            <option value="600" selected>10 minutes</option>
-            <option value="900">15 minutes</option>
-            <option value="1200">20 minutes</option>
+          <select value={aiConfig?.max_call_duration_seconds || 600} onChange={e => setAiConfig((p: any) => ({ ...p, max_call_duration_seconds: parseInt(e.target.value) }))}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500">
+            <option value={300}>5 minutes</option>
+            <option value={600}>10 minutes</option>
+            <option value={900}>15 minutes</option>
+            <option value={1200}>20 minutes</option>
           </select>
         </div>
+
+        <button onClick={saveAIConfig} disabled={saving}
+          className="flex items-center gap-2 bg-omiflow-600 text-white text-sm font-medium px-5 py-2.5 rounded-lg hover:bg-omiflow-700 disabled:opacity-50 transition-colors">
+          <Save className="w-4 h-4" />
+          {saving ? 'Saving...' : 'Save & Sync to AI'}
+        </button>
       </div>
 
-      {/* Intake fields */}
+      {/* Intake Configuration */}
       <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-        <h2 className="font-semibold text-gray-900">Intake Configuration</h2>
-        <p className="text-sm text-gray-500">What information should the AI collect from callers?</p>
+        <h2 className="font-semibold text-gray-900">What the AI Collects</h2>
+        <p className="text-sm text-gray-500">What information should the AI gather from every caller?</p>
 
         {[
-          { label: 'Collect caller name', key: 'collect_name', defaultChecked: true },
-          { label: 'Collect callback number', key: 'collect_callback', defaultChecked: true },
-          { label: 'Collect reason for calling', key: 'collect_reason', defaultChecked: true },
-          { label: 'Book appointments', key: 'book_appointments', defaultChecked: false },
-          { label: 'Use knowledge base', key: 'use_kb', defaultChecked: true },
+          { label: 'Caller name', key: 'collect_name', desc: 'Ask for and record the caller\'s name' },
+          { label: 'Callback number', key: 'collect_callback_number', desc: 'Confirm a number to call back on' },
+          { label: 'Reason for calling', key: 'collect_reason', desc: 'Ask what they\'re calling about' },
+          { label: 'Book appointments', key: 'book_appointments', desc: 'Allow the AI to book consultations' },
+          { label: 'Use knowledge base', key: 'use_knowledge_base', desc: 'Answer questions from uploaded documents' },
         ].map(field => (
-          <div key={field.key} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-            <span className="text-sm text-gray-700">{field.label}</span>
+          <div key={field.key} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+            <div>
+              <div className="text-sm font-medium text-gray-700">{field.label}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{field.desc}</div>
+            </div>
             <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" className="sr-only peer" defaultChecked={field.defaultChecked} />
+              <input type="checkbox"
+                checked={aiConfig?.[field.key] ?? true}
+                onChange={e => setAiConfig((p: any) => ({ ...p, [field.key]: e.target.checked }))}
+                className="sr-only peer" />
               <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-omiflow-600" />
             </label>
           </div>
         ))}
       </div>
 
-      {/* Automation */}
-      <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+      {/* Automation Rules */}
+      <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
         <h2 className="font-semibold text-gray-900">Automation Rules</h2>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Callback Promise (hours)</label>
-            <input type="number" defaultValue={2} min={1} max={48}
+            <input type="number"
+              value={settings?.callback_promise_hours || 2}
+              onChange={e => setSettings((p: any) => ({ ...p, callback_promise_hours: parseInt(e.target.value) }))}
+              min={1} max={48}
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
-            <p className="text-xs text-gray-400 mt-1">Triggers overdue alert after this time</p>
+            <p className="text-xs text-gray-400 mt-1">Overdue alert fires after this many hours</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Escalation Threshold (hours)</label>
-            <input type="number" defaultValue={24} min={1} max={168}
+            <input type="number"
+              value={settings?.escalation_hours || 24}
+              onChange={e => setSettings((p: any) => ({ ...p, escalation_hours: parseInt(e.target.value) }))}
+              min={1} max={168}
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
-            <p className="text-xs text-gray-400 mt-1">Marks lead critical after this time</p>
+            <p className="text-xs text-gray-400 mt-1">Lead marked critical after this many hours</p>
           </div>
         </div>
-      </div>
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
-        <strong>Note:</strong> Full AI configuration management (saving to Vapi, live preview) will be completed in Phase 2. Changes here are currently read-only.
-      </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">SMS Confirmation Template</label>
+          <textarea
+            value={settings?.sms_confirmation_template || ''}
+            onChange={e => setSettings((p: any) => ({ ...p, sms_confirmation_template: e.target.value }))}
+            rows={3}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500"
+            placeholder="Thank you for contacting {firm_name}. A member of our team will call you back within {callback_hours} hours." />
+          <p className="text-xs text-gray-400 mt-1">Use {`{firm_name}`} and {`{callback_hours}`} as placeholders</p>
+        </div>
 
-      <button disabled className="flex items-center gap-2 bg-omiflow-600 text-white text-sm font-medium px-6 py-2.5 rounded-lg hover:bg-omiflow-700 transition-colors disabled:opacity-50">
-        <Save className="w-4 h-4" />
-        Save Configuration (Phase 2)
-      </button>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Notification Email</label>
+          <input type="email"
+            value={settings?.notification_email || ''}
+            onChange={e => setSettings((p: any) => ({ ...p, notification_email: e.target.value }))}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500"
+            placeholder="manager@firm.com" />
+          <p className="text-xs text-gray-400 mt-1">Receives urgent lead alerts and escalation notifications</p>
+        </div>
+
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <div className="text-sm font-medium text-gray-700">Auto SMS to callers</div>
+            <div className="text-xs text-gray-400">Send confirmation SMS after every AI call</div>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox"
+              checked={settings?.auto_sms_enabled ?? true}
+              onChange={e => setSettings((p: any) => ({ ...p, auto_sms_enabled: e.target.checked }))}
+              className="sr-only peer" />
+            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-omiflow-600" />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <div className="text-sm font-medium text-gray-700">Auto email summaries</div>
+            <div className="text-xs text-gray-400">Send call summary email after every AI call</div>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox"
+              checked={settings?.auto_email_enabled ?? true}
+              onChange={e => setSettings((p: any) => ({ ...p, auto_email_enabled: e.target.checked }))}
+              className="sr-only peer" />
+            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-omiflow-600" />
+          </label>
+        </div>
+
+        <button onClick={saveSettings} disabled={saving}
+          className="flex items-center gap-2 bg-omiflow-600 text-white text-sm font-medium px-5 py-2.5 rounded-lg hover:bg-omiflow-700 disabled:opacity-50 transition-colors">
+          <Save className="w-4 h-4" />
+          {saving ? 'Saving...' : 'Save Automation Rules'}
+        </button>
+      </div>
     </div>
   )
 }
