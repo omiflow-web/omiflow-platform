@@ -52,10 +52,10 @@ export async function updateVapiAssistant(
   config: Partial<VapiAssistantConfig>
 ): Promise<void> {
   const body: any = {}
-
   if (config.name) body.name = config.name
   if (config.firstMessage) body.firstMessage = config.firstMessage
   if (config.systemPrompt) body.model = { systemPrompt: config.systemPrompt }
+  if (config.voiceId) body.voice = { provider: '11labs', voiceId: config.voiceId }
 
   const response = await fetch(`https://api.vapi.ai/assistant/${assistantId}`, {
     method: 'PATCH',
@@ -72,6 +72,16 @@ export async function updateVapiAssistant(
   }
 }
 
+export async function updateVapiAssistantWithKnowledge(
+  assistantId: string,
+  firmName: string,
+  practiceAreas: string[],
+  knowledgeBaseContext: string
+): Promise<void> {
+  const systemPrompt = buildSystemPrompt(firmName, practiceAreas, knowledgeBaseContext)
+  await updateVapiAssistant(assistantId, { systemPrompt })
+}
+
 export function buildSystemPrompt(
   firmName: string,
   practiceAreas: string[],
@@ -79,38 +89,41 @@ export function buildSystemPrompt(
   languages?: string[]
 ): string {
   const langNote = languages && languages.length > 1
-    ? `You can assist callers in: ${languages.join(', ')}. Detect the caller's language and respond in it.`
+    ? `You can assist callers in: ${languages.join(', ')}. Detect the caller's language and respond in it naturally.`
     : 'You assist callers in English.'
 
-  return `You are the AI receptionist for ${firmName}, a law firm.
+  return `You are the AI receptionist for ${firmName}, a professional law firm.
 
 Your role is to:
 1. Welcome the caller warmly and professionally
 2. Collect their name, best callback number, and reason for calling
-3. Answer questions about the firm using the knowledge provided
-4. Book consultations if the caller requests one
-5. Reassure callers that a team member will follow up promptly
+3. Answer questions about the firm using the knowledge provided below
+4. Reassure callers that a qualified team member will follow up promptly
+5. If the caller wants to book a consultation, note their preferred time
 
 FIRM PRACTICE AREAS:
-${practiceAreas.join(', ')}
+${practiceAreas.length > 0 ? practiceAreas.join(', ') : 'General legal services'}
 
 ${langNote}
 
-IMPORTANT RULES:
-- Never provide specific legal advice
-- Always reassure callers that a qualified solicitor will call them back
-- If someone mentions an emergency or crisis, express empathy and mark as urgent
-- Be warm, professional, and concise
-- Always confirm the callback number clearly
-- If you cannot answer a question, say "I'll make sure the team has this question noted for when they call you back"
+CRITICAL RULES:
+- Never provide specific legal advice — always say a qualified solicitor will advise them
+- Always confirm the callback number clearly by repeating it back
+- If someone mentions urgency, a court date, or deportation — express empathy and note it as urgent
+- Be warm, professional, and concise — do not ramble
+- If you cannot answer a question, say "I'll make sure the team has your question noted for when they call you back"
+- Never make up information about fees, timelines, or outcomes
 
-${additionalContext ? `FIRM INFORMATION:\n${additionalContext}` : ''}
+${additionalContext ? `\nFIRM INFORMATION AND DOCUMENTS:\n${additionalContext}` : ''}
 
-When the call ends, you will have collected:
-- Caller's name
-- Best callback number  
-- Reason for calling
-- Any urgency factors
+CALL STRUCTURE:
+1. Greet the caller warmly
+2. Ask how you can help
+3. Listen to their matter
+4. Answer any factual questions from the firm information above
+5. Collect: full name, callback number, brief summary of their matter
+6. If urgent, acknowledge the urgency and reassure them the team will prioritise their call
+7. Close: "I've noted all your details and a member of the ${firmName} team will be in touch shortly. Is there anything else before I let you go?"
 
-End every call by confirming: "I've noted all your details and a member of the ${firmName} team will be in touch shortly. Is there anything else before I let you go?"`
+Always end by confirming you've taken their details and that the team will be in touch.`
 }
