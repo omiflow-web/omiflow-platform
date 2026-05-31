@@ -60,7 +60,7 @@ export default async function ReportsPage() {
   }, {})
 
   const topPracticeAreas = Object.entries(practiceAreaCounts)
-    .sort(([, a], [, b]) => b - a)
+    .sort(([, a], [, b]) => (b as number) - (a as number))
     .slice(0, 5)
 
   return (
@@ -116,7 +116,7 @@ export default async function ReportsPage() {
         <div className="bg-white rounded-xl border border-gray-100 p-5">
           <h2 className="font-semibold text-gray-900 text-sm mb-4">Caller Sentiment (30 days)</h2>
           <div className="space-y-2">
-            {Object.entries(sentimentCounts).sort(([, a], [, b]) => b - a).map(([sentiment, count]) => (
+            {Object.entries(sentimentCounts).sort(([, a], [, b]) => (b as number) - (a as number)).map(([sentiment, count]) => (
               <div key={sentiment} className="flex items-center justify-between">
                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium sentiment-${sentiment}`}>
                   {sentiment}
