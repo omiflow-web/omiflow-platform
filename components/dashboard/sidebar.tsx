@@ -1,17 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Phone, Users, MessageSquare,
   Calendar, CheckSquare, BarChart3, Settings,
-  BookOpen, LogOut, Bell
+  BookOpen, LogOut, Bot
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/calls', label: 'Calls', icon: Phone },
   { href: '/dashboard/leads', label: 'Leads', icon: Users },
   { href: '/dashboard/communications', label: 'Communications', icon: MessageSquare },
@@ -23,7 +22,7 @@ const navItems = [
 const settingsItems = [
   { href: '/dashboard/settings/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
   { href: '/dashboard/settings/staff', label: 'Staff', icon: Users },
-  { href: '/dashboard/settings/ai-config', label: 'AI Config', icon: Settings },
+  { href: '/dashboard/settings/ai-config', label: 'AI Config', icon: Bot },
 ]
 
 export default function DashboardSidebar({ user, org }: { user: any; org: any }) {
@@ -34,10 +33,16 @@ export default function DashboardSidebar({ user, org }: { user: any; org: any })
   async function handleLogout() {
     await supabase.auth.signOut()
     router.push('/auth/login')
+    router.refresh()
+  }
+
+  function isActive(href: string, exact?: boolean) {
+    if (exact) return pathname === href
+    return pathname === href || pathname.startsWith(href + '/')
   }
 
   return (
-    <aside className="w-60 bg-white border-r border-gray-100 flex flex-col h-screen sticky top-0">
+    <aside className="w-60 bg-white border-r border-gray-100 flex flex-col h-screen sticky top-0 flex-shrink-0">
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 py-5 border-b border-gray-100">
         <div className="w-8 h-8 bg-omiflow-600 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -52,9 +57,12 @@ export default function DashboardSidebar({ user, org }: { user: any; org: any })
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {navItems.map(item => {
-          const active = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href))
+          const active = isActive(item.href, item.exact)
           return (
-            <Link key={item.href} href={item.href}
+            <Link
+              key={item.href}
+              href={item.href}
+              prefetch={true}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 active
                   ? 'bg-omiflow-50 text-omiflow-700 font-medium'
@@ -71,9 +79,12 @@ export default function DashboardSidebar({ user, org }: { user: any; org: any })
         </div>
 
         {settingsItems.map(item => {
-          const active = pathname.startsWith(item.href)
+          const active = isActive(item.href)
           return (
-            <Link key={item.href} href={item.href}
+            <Link
+              key={item.href}
+              href={item.href}
+              prefetch={true}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 active
                   ? 'bg-omiflow-50 text-omiflow-700 font-medium'
@@ -100,7 +111,10 @@ export default function DashboardSidebar({ user, org }: { user: any; org: any })
             </div>
             <div className="text-xs text-gray-400 truncate">{user?.email}</div>
           </div>
-          <button onClick={handleLogout} className="p-1 text-gray-400 hover:text-gray-600">
+          <button
+            onClick={handleLogout}
+            title="Log out"
+            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
