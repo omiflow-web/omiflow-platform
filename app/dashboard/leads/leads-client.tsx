@@ -23,14 +23,13 @@ const callTypeBadge: Record<string, { label: string; class: string }> = {
 }
 
 export default function LeadsClient({
-  initialLeads, counts, searchParams, isOwner, showDeleted, orgId
+  initialLeads, counts, searchParams, isOwner, showDeleted
 }: {
   initialLeads: any[]
   counts: Record<string, number>
   searchParams: any
   isOwner: boolean
   showDeleted: boolean
-  orgId: string
 }) {
   const [leads, setLeads] = useState(initialLeads)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
