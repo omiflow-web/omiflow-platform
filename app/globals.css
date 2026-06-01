@@ -73,3 +73,29 @@
 .status-consultation_scheduled { @apply bg-yellow-100 text-yellow-700; }
 .status-retained { @apply bg-green-100 text-green-700; }
 .status-lost { @apply bg-gray-100 text-gray-500; }
+
+/* Mobile responsive improvements */
+@media (max-width: 768px) {
+  /* Prevent horizontal overflow */
+  body { overflow-x: hidden; }
+
+  /* Tables scroll horizontally on mobile */
+  .table-mobile-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Cards stack properly */
+  .mobile-stack { display: flex; flex-direction: column; gap: 12px; }
+
+  /* Content padding on mobile */
+  .mobile-padding { padding: 14px; }
+
+  /* Hide elements on mobile */
+  .mobile-hidden { display: none !important; }
+
+  /* Full width on mobile */
+  .mobile-full { width: 100% !important; }
+}
+
+/* Safe area for mobile bottom nav */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+}
