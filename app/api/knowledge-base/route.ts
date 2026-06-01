@@ -181,3 +181,60 @@ async function processDocument(
 
   console.log(`✅ Processed document ${docId}: ${chunks.length} chunks`)
 }
+
+export async function PATCH(request: NextRequest) {
+  const cookieStore = cookies()
+  const supabase = createServerClientInstance(cookieStore)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: userData } = await supabase.from('users').select('organization_id').eq('id', user.id).single()
+  const orgId = (userData as any)?.organization_id
+  if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const { searchParams } = new URL(request.url)
+  const docId = searchParams.get('docId')
+  if (!docId) return NextResponse.json({ error: 'No document ID' }, { status: 400 })
+
+  const body = await request.json()
+  const { title, content_text } = body
+
+  const db = createServiceClient() as any
+
+  // Re-chunk if content changed
+  if (content_text) {
+    await db.from('knowledge_chunks').delete().eq('document_id', docId)
+    const { data: doc } = await db.from('knowledge_documents').select('knowledge_base_id').eq('id', docId).single()
+    if (doc) {
+      const words = content_text.split(/\s+/)
+      const chunkSize = 500
+      const overlap = 50
+      let chunkIndex = 0
+      for (let i = 0; i < words.length; i += chunkSize - overlap) {
+        const chunk = words.slice(i, i + chunkSize).join(' ')
+        if (chunk.trim().length > 20) {
+          await db.from('knowledge_chunks').insert({
+            organization_id: orgId,
+            document_id: docId,
+            knowledge_base_id: doc.knowledge_base_id,
+            content: chunk,
+            chunk_index: chunkIndex++,
+            metadata: {}
+          })
+        }
+      }
+      await db.from('knowledge_documents').update({
+        title: title || undefined,
+        content_text,
+        chunk_count: chunkIndex,
+        is_processed: true,
+        processed_at: new Date().toISOString()
+      }).eq('id', docId).eq('organization_id', orgId)
+    }
+  } else if (title) {
+    await db.from('knowledge_documents').update({ title }).eq('id', docId).eq('organization_id', orgId)
+  }
+
+  const { data: updated } = await db.from('knowledge_documents').select('*').eq('id', docId).single()
+  return NextResponse.json({ document: updated })
+}
