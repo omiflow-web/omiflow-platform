@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClientInstance, createServiceClient } from '@/lib/supabase'
+import { extractTextFromBuffer } from '@/lib/document-extractor'
 
 export async function GET() {
   const cookieStore = cookies()
@@ -17,31 +18,6 @@ export async function GET() {
   const { data: documents } = await db.from('knowledge_documents').select('*').eq('organization_id', orgId).order('created_at', { ascending: false })
 
   return NextResponse.json({ knowledgeBase: kb, documents: documents || [] })
-}
-
-async function extractText(buffer: Buffer, ext: string, fileName: string): Promise<string> {
-  try {
-    if (ext === '.txt' || ext === '.md') {
-      return buffer.toString('utf-8')
-    }
-
-    if (ext === '.docx' || ext === '.doc') {
-      const mammoth = require('mammoth')
-      const result = await mammoth.extractRawText({ buffer })
-      return result.value || ''
-    }
-
-    if (ext === '.pdf') {
-      const pdfParse = require('pdf-parse')
-      const data = await pdfParse(buffer)
-      return data.text || ''
-    }
-
-    return `[${fileName}] — Unsupported file type`
-  } catch (err: any) {
-    console.error(`Text extraction failed for ${fileName}:`, err.message)
-    return `[${fileName}] — Text extraction failed: ${err.message}`
-  }
 }
 
 export async function POST(request: NextRequest) {
@@ -66,7 +42,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (file.size > 10 * 1024 * 1024) {
-    return NextResponse.json({ error: 'File too large. Maximum size is 10MB.' }, { status: 400 })
+    return NextResponse.json({ error: 'File too large. Maximum 10MB.' }, { status: 400 })
   }
 
   const db = createServiceClient() as any
@@ -76,16 +52,15 @@ export async function POST(request: NextRequest) {
   const arrayBuffer = await file.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
 
-  // Extract real text content
-  const contentText = await extractText(buffer, ext, file.name)
+  // Extract real text from the document
+  const contentText = await extractTextFromBuffer(buffer, ext, file.name)
 
-  // Upload to storage
+  // Upload file to storage
   const storagePath = `${orgId}/${Date.now()}-${file.name}`
   await supabase.storage.from('knowledge-documents').upload(storagePath, buffer, {
     contentType: file.type || 'application/octet-stream'
   })
 
-  // Create document record
   const { data: doc } = await db.from('knowledge_documents').insert({
     organization_id: orgId,
     knowledge_base_id: kb.id,
@@ -101,7 +76,6 @@ export async function POST(request: NextRequest) {
 
   if (!doc) return NextResponse.json({ error: 'Failed to save document' }, { status: 500 })
 
-  // Chunk and index
   await processDocument(doc.id, orgId, kb.id, contentText, db)
 
   const { data: updated } = await db.from('knowledge_documents').select('*').eq('id', doc.id).single()
@@ -150,11 +124,9 @@ export async function PATCH(request: NextRequest) {
   if (content_text) {
     await db.from('knowledge_chunks').delete().eq('document_id', docId)
     const { data: doc } = await db.from('knowledge_documents').select('knowledge_base_id').eq('id', docId).single()
-    if (doc) {
-      await processDocument(docId, orgId, doc.knowledge_base_id, content_text, db)
-    }
+    if (doc) await processDocument(docId, orgId, doc.knowledge_base_id, content_text, db)
     await db.from('knowledge_documents').update({
-      title: title || undefined,
+      ...(title && { title }),
       content_text,
       updated_at: new Date().toISOString()
     }).eq('id', docId).eq('organization_id', orgId)
@@ -167,34 +139,33 @@ export async function PATCH(request: NextRequest) {
 }
 
 async function processDocument(docId: string, orgId: string, kbId: string, contentText: string, db: any): Promise<void> {
-  if (!contentText || contentText.length < 10) return
+  if (!contentText || contentText.length < 10) {
+    await db.from('knowledge_documents').update({ is_processed: true, chunk_count: 0, processed_at: new Date().toISOString() }).eq('id', docId)
+    return
+  }
 
   const words = contentText.split(/\s+/)
   const chunkSize = 500
   const overlap = 50
-  const chunks: string[] = []
+  let chunkIndex = 0
 
   for (let i = 0; i < words.length; i += chunkSize - overlap) {
     const chunk = words.slice(i, i + chunkSize).join(' ')
-    if (chunk.trim().length > 20) chunks.push(chunk)
-  }
-
-  for (let i = 0; i < chunks.length; i++) {
-    await db.from('knowledge_chunks').insert({
-      organization_id: orgId,
-      document_id: docId,
-      knowledge_base_id: kbId,
-      content: chunks[i],
-      chunk_index: i,
-      metadata: { chunkTotal: chunks.length }
-    })
+    if (chunk.trim().length > 20) {
+      await db.from('knowledge_chunks').insert({
+        organization_id: orgId,
+        document_id: docId,
+        knowledge_base_id: kbId,
+        content: chunk,
+        chunk_index: chunkIndex++,
+        metadata: { chunkTotal: Math.ceil(words.length / (chunkSize - overlap)) }
+      })
+    }
   }
 
   await db.from('knowledge_documents').update({
     is_processed: true,
-    chunk_count: chunks.length,
+    chunk_count: chunkIndex,
     processed_at: new Date().toISOString()
   }).eq('id', docId)
-
-  console.log(`✅ Processed ${docId}: ${chunks.length} chunks`)
 }
