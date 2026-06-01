@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { Trash2, RotateCcw, AlertTriangle } from 'lucide-react'
+import { Trash2, RotateCcw } from 'lucide-react'
 
 const statusConfig: Record<string, { label: string; class: string }> = {
   new: { label: 'New', class: 'status-new' },
@@ -22,15 +22,15 @@ const callTypeBadge: Record<string, { label: string; class: string }> = {
   other: { label: 'Other', class: 'bg-gray-100 text-gray-600' },
 }
 
-export default function LeadsClient({
-  initialLeads, counts, searchParams, isOwner, showDeleted
-}: {
+interface Props {
   initialLeads: any[]
   counts: Record<string, number>
   searchParams: any
   isOwner: boolean
   showDeleted: boolean
-}) {
+}
+
+export default function LeadsClient({ initialLeads, counts, searchParams, isOwner, showDeleted }: Props) {
   const [leads, setLeads] = useState(initialLeads)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -72,15 +72,15 @@ export default function LeadsClient({
             </div>
             <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">Remove this lead?</h3>
             <p className="text-sm text-gray-500 text-center mb-5">
-              This lead will be moved to the deleted leads section. {isOwner ? 'You can permanently delete it from there.' : 'Only the account owner can permanently delete it.'}
+              This lead will be moved to the deleted leads section.{' '}
+              {isOwner ? 'You can permanently delete it from there.' : 'Only the account owner can permanently delete it.'}
             </p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(null)}
                 className="flex-1 border border-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50">
                 Cancel
               </button>
-              <button onClick={() => softDelete(confirmDelete)}
-                disabled={deleting === confirmDelete}
+              <button onClick={() => softDelete(confirmDelete)} disabled={deleting === confirmDelete}
                 className="flex-1 bg-red-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50">
                 {deleting === confirmDelete ? 'Removing...' : 'Remove Lead'}
               </button>
@@ -94,14 +94,12 @@ export default function LeadsClient({
           <h1 className="text-2xl font-bold text-gray-900">{showDeleted ? 'Deleted Leads' : 'Leads'}</h1>
           <p className="text-sm text-gray-500 mt-0.5">{leads.length} {showDeleted ? 'deleted' : 'total'} leads</p>
         </div>
-        <div className="flex gap-2">
-          {isOwner && (
-            <a href={showDeleted ? '/dashboard/leads' : '/dashboard/leads?deleted=true'}
-              className="flex items-center gap-2 border border-gray-200 text-gray-600 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-              {showDeleted ? '← Back to Leads' : <><Trash2 className="w-4 h-4" /> Deleted Leads</>}
-            </a>
-          )}
-        </div>
+        {isOwner && (
+          <a href={showDeleted ? '/dashboard/leads' : '/dashboard/leads?deleted=true'}
+            className="flex items-center gap-2 border border-gray-200 text-gray-600 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+            {showDeleted ? '← Back to Leads' : <><Trash2 className="w-4 h-4 mr-1" />Deleted Leads</>}
+          </a>
+        )}
       </div>
 
       {!showDeleted && (
