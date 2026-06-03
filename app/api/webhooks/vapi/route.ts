@@ -9,7 +9,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { message } = body
 
-    // Vapi sends various event types - only process end of call
     if (message?.type !== 'end-of-call-report') {
       return NextResponse.json({ received: true })
     }
@@ -19,75 +18,87 @@ export async function POST(request: NextRequest) {
     const recordingUrl = message.artifact?.recordingUrl || null
     const durationSeconds = Math.round(message.durationSeconds || 0)
     const callerNumber = message.call?.customer?.number || 'unknown'
+    const assistantId = message.call?.assistantId
 
-    console.log(`📞 Vapi webhook received: callId=${vapiCallId}, caller=${callerNumber}, duration=${durationSeconds}s`)
+    // Try to get org ID from metadata first (set by Twilio webhook)
+    // This is the reliable path — org ID was passed when the call started
+    const metadataOrgId = message.call?.metadata?.organizationId
 
-    if (!vapiCallId) {
-      console.error('No vapiCallId in webhook payload')
-      return NextResponse.json({ error: 'Missing call ID' }, { status: 400 })
-    }
+    console.log(`📞 Vapi webhook: callId=${vapiCallId} caller=${callerNumber} duration=${durationSeconds}s orgFromMeta=${metadataOrgId}`)
 
     const db = createServiceClient() as any
 
-    // Find the call record created by Twilio webhook
-    const { data: callRecord } = await db
-      .from('calls')
-      .select('id, organization_id, lead_id')
-      .eq('vapi_call_id', vapiCallId)
-      .single()
+    // Resolve organization ID — three fallback methods in order of reliability
+    let organizationId: string | null = null
 
-    // If no call record found, create one (handles case where Vapi fires before Twilio)
-    let callId: string
-    let organizationId: string
+    // Method 1: org ID passed directly in metadata (most reliable — set by Twilio webhook)
+    if (metadataOrgId) {
+      organizationId = metadataOrgId
+      console.log(`✅ Org resolved from metadata: ${organizationId}`)
+    }
 
-    if (!callRecord) {
-      console.log('No existing call record — looking up org by assistant')
+    // Method 2: find existing call record created by Twilio webhook
+    if (!organizationId && vapiCallId) {
+      const { data: callRecord } = await db
+        .from('calls')
+        .select('organization_id')
+        .eq('vapi_call_id', vapiCallId)
+        .single()
+      if (callRecord?.organization_id) {
+        organizationId = callRecord.organization_id
+        console.log(`✅ Org resolved from call record: ${organizationId}`)
+      }
+    }
 
-      // Find org by vapi assistant ID
+    // Method 3: look up org by assistant ID (works for direct Vapi test calls)
+    if (!organizationId && assistantId) {
       const { data: aiConfig } = await db
         .from('organization_ai_configs')
         .select('organization_id')
-        .eq('vapi_assistant_id', message.call?.assistantId)
+        .eq('vapi_assistant_id', assistantId)
         .single()
-
-      if (!aiConfig) {
-        console.error('Could not find org for assistant:', message.call?.assistantId)
-        return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
+      if (aiConfig?.organization_id) {
+        organizationId = aiConfig.organization_id
+        console.log(`✅ Org resolved from assistant ID: ${organizationId}`)
       }
+    }
 
-      organizationId = aiConfig.organization_id
+    if (!organizationId) {
+      console.error('❌ Could not resolve organization for call')
+      return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
+    }
 
-      const { data: newCall } = await db
-        .from('calls')
-        .insert({
-          organization_id: organizationId,
-          caller_number: callerNumber,
-          direction: 'inbound',
-          handled_by: 'ai',
-          status: 'completed',
-          vapi_call_id: vapiCallId,
-          recording_url: recordingUrl,
-          duration_seconds: durationSeconds,
-          started_at: new Date(Date.now() - durationSeconds * 1000).toISOString(),
-          ended_at: new Date().toISOString()
-        })
-        .select('id')
-        .single()
+    // Find or create call record
+    let callId: string
 
-      callId = newCall.id
-    } else {
-      callId = callRecord.id
-      organizationId = callRecord.organization_id
+    const { data: existingCall } = await db
+      .from('calls')
+      .select('id')
+      .eq('vapi_call_id', vapiCallId)
+      .single()
 
-      // Update call with final data
+    if (existingCall) {
+      callId = existingCall.id
       await db.from('calls').update({
         recording_url: recordingUrl,
         duration_seconds: durationSeconds,
         status: 'completed',
-        handled_by: 'ai',
-        vapi_call_id: vapiCallId,
         ended_at: new Date().toISOString()
       }).eq('id', callId)
+    } else {
+      const { data: newCall } = await db.from('calls').insert({
+        organization_id: organizationId,
+        caller_number: callerNumber,
+        direction: 'inbound',
+        handled_by: 'ai',
+        status: 'completed',
+        vapi_call_id: vapiCallId,
+        recording_url: recordingUrl,
+        duration_seconds: durationSeconds,
+        started_at: new Date(Date.now() - durationSeconds * 1000).toISOString(),
+        ended_at: new Date().toISOString()
+      }).select('id').single()
+      callId = newCall.id
     }
 
     // Save recording
@@ -97,7 +108,7 @@ export async function POST(request: NextRequest) {
         call_id: callId,
         url: recordingUrl,
         duration_seconds: durationSeconds
-      })
+      }).catch(console.error)
     }
 
     // Save transcript
@@ -108,142 +119,73 @@ export async function POST(request: NextRequest) {
         content: transcript,
         content_structured: message.artifact?.messages || null,
         word_count: transcript.split(' ').length
-      })
+      }).catch(console.error)
     }
 
-    // Get practice areas for AI classification
-    const { data: practiceAreas } = await db
-      .from('practice_areas')
-      .select('name')
-      .eq('organization_id', organizationId)
-      .eq('is_active', true)
-
-    const practiceAreaNames = (practiceAreas || []).map((p: any) => p.name)
-
-    // Run AI pipeline — only if we have a transcript
+    // Run AI pipeline if transcript is long enough to analyse
     if (transcript && transcript.length > 50) {
-      console.log(`🤖 Running AI pipeline for call ${callId}`)
+      const { data: practiceAreas } = await db
+        .from('practice_areas')
+        .select('name')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true)
 
-      const aiResult = await processCallWithAI(
-        transcript,
-        organizationId,
-        callId,
-        practiceAreaNames
-      )
+      const practiceAreaNames = (practiceAreas || []).map((p: any) => p.name)
 
-      // Find or create lead
-      const { leadId } = await findOrCreateLead(
-        organizationId,
-        callerNumber,
-        aiResult.callerName,
-        aiResult
-      )
+      const aiResult = await processCallWithAI(transcript, organizationId, callId, practiceAreaNames)
+      const { leadId } = await findOrCreateLead(organizationId, callerNumber, aiResult.callerName, aiResult)
 
-      // Link call to lead
       await db.from('calls').update({ lead_id: leadId }).eq('id', callId)
-
-      // Save all AI scores
       await saveAIResults(aiResult, organizationId, callId, leadId)
-
-      // Create follow-up tasks
       await createAutoTasks(organizationId, leadId, callId, aiResult)
 
-      // Get org settings
-      const { data: settings } = await db
-        .from('organization_settings')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .single()
-
-      const { data: org } = await db
-        .from('organizations')
-        .select('name')
-        .eq('id', organizationId)
-        .single()
-
-      const firmName = org?.name || 'The firm'
-
-      // Send summary email to firm
-      if (settings?.auto_email_enabled && settings?.email_summary_recipients?.length > 0) {
-        try {
-          await sendCallSummaryEmail(
-            settings.email_summary_recipients,
-            firmName,
-            callerNumber,
-            aiResult,
-            durationSeconds
-          )
-          console.log(`📧 Summary email sent to ${settings.email_summary_recipients.join(', ')}`)
-        } catch (emailError) {
-          console.error('Email send failed:', emailError)
-        }
-      }
-
-      // Send confirmation SMS to caller
-      if (settings?.auto_sms_enabled && callerNumber !== 'unknown') {
-        try {
-          await sendConfirmationSMS(
-            callerNumber,
-            firmName,
-            settings?.callback_promise_hours || 2,
-            settings?.sms_confirmation_template
-          )
-
-          await db.from('sms_messages').insert({
-            organization_id: organizationId,
-            lead_id: leadId,
-            from_number: process.env.TWILIO_PHONE_NUMBER,
-            to_number: callerNumber,
-            body: `Thank you for contacting ${firmName}. We will call you back within ${settings?.callback_promise_hours || 2} hours.`,
-            status: 'sent',
-            direction: 'outbound'
-          })
-          console.log(`📱 SMS sent to ${callerNumber}`)
-        } catch (smsError) {
-          console.error('SMS send failed:', smsError)
-        }
-      }
-
-      // Create urgent notifications for critical/distressed leads
+      // Notifications for urgent leads
       if (aiResult.leadQuality === 'critical' || aiResult.sentiment === 'distressed') {
-        const { data: orgUsers } = await db
-          .from('users')
-          .select('id')
-          .eq('organization_id', organizationId)
-
+        const { data: orgUsers } = await db.from('users').select('id').eq('organization_id', organizationId)
         for (const user of orgUsers || []) {
           await db.from('notifications').insert({
             organization_id: organizationId,
             user_id: user.id,
             lead_id: leadId,
             call_id: callId,
-            title: '🚨 Urgent Lead Requires Immediate Attention',
+            title: '🚨 Urgent lead requires immediate attention',
             message: `${aiResult.callerName || callerNumber} — ${aiResult.practiceArea}. ${aiResult.recommendation}`,
             type: 'urgent',
             channel: 'in_app'
-          })
+          }).catch(console.error)
         }
-        console.log(`🚨 Urgent notification created for lead ${leadId}`)
       }
 
-      // Log communication record
-      await db.from('communications').insert({
-        organization_id: organizationId,
-        lead_id: leadId,
-        call_id: callId,
-        type: 'call',
-        direction: 'inbound',
-        from_address: callerNumber,
-        content: aiResult.summary,
-        status: 'completed'
-      })
+      // Email summary to firm
+      const { data: settings } = await db.from('organization_settings').select('*').eq('organization_id', organizationId).single()
+      const { data: org } = await db.from('organizations').select('name').eq('id', organizationId).single()
 
-      console.log(`✅ Call fully processed: callId=${callId} leadId=${leadId} quality=${aiResult.leadQuality} sentiment=${aiResult.sentiment}`)
-      return NextResponse.json({ success: true, callId, leadId })
-    } else {
-      console.log(`⚠️ Call ${callId} had no/short transcript — skipping AI pipeline`)
-      return NextResponse.json({ success: true, callId, note: 'No transcript to process' })
+      if (settings?.auto_email_enabled && settings?.notification_email) {
+        await sendCallSummaryEmail(
+          [settings.notification_email],
+          org?.name || 'The firm',
+          callerNumber,
+          aiResult,
+          durationSeconds
+        ).catch(console.error)
+      }
+
+      // SMS to caller
+      if (settings?.auto_sms_enabled && callerNumber !== 'unknown') {
+        await sendConfirmationSMS(
+          callerNumber,
+          org?.name || 'The firm',
+          settings?.callback_promise_hours || 2,
+          settings?.sms_confirmation_template
+        ).catch(console.error)
+      }
+
+      console.log(`✅ Call processed: org=${organizationId} call=${callId} lead=${leadId} quality=${aiResult.leadQuality}`)
+      return NextResponse.json({ success: true, callId, leadId, organizationId })
     }
+
+    console.log(`⚠️ Call ${callId} had no transcript — saved but not analysed`)
+    return NextResponse.json({ success: true, callId, organizationId, note: 'No transcript' })
 
   } catch (error: any) {
     console.error('Vapi webhook error:', error)
