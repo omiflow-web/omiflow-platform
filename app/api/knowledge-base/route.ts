@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClientInstance, createServiceClient } from '@/lib/supabase'
 import { extractTextFromBuffer } from '@/lib/document-extractor'
+import { updateVapiAssistantKnowledge } from '@/lib/vapi'
 
 export async function GET() {
   const cookieStore = cookies()
@@ -51,15 +52,12 @@ export async function POST(request: NextRequest) {
 
   const arrayBuffer = await file.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
-
-  // Extract real text from the document
   const contentText = await extractTextFromBuffer(buffer, ext, file.name)
 
-  // Upload file to storage
   const storagePath = `${orgId}/${Date.now()}-${file.name}`
   await supabase.storage.from('knowledge-documents').upload(storagePath, buffer, {
     contentType: file.type || 'application/octet-stream'
-  })
+  }).catch(console.error)
 
   const { data: doc } = await db.from('knowledge_documents').insert({
     organization_id: orgId,
@@ -77,6 +75,10 @@ export async function POST(request: NextRequest) {
   if (!doc) return NextResponse.json({ error: 'Failed to save document' }, { status: 500 })
 
   await processDocument(doc.id, orgId, kb.id, contentText, db)
+
+  // Sync all knowledge base content into this firm's Vapi assistant
+  // This is what makes the AI use the new information during calls
+  await syncKnowledgeBaseToVapi(orgId, db)
 
   const { data: updated } = await db.from('knowledge_documents').select('*').eq('id', doc.id).single()
   return NextResponse.json({ document: updated })
@@ -99,6 +101,9 @@ export async function DELETE(request: NextRequest) {
   const db = createServiceClient() as any
   await db.from('knowledge_chunks').delete().eq('document_id', docId)
   await db.from('knowledge_documents').delete().eq('id', docId).eq('organization_id', orgId)
+
+  // Re-sync after deletion so removed info is no longer in the assistant
+  await syncKnowledgeBaseToVapi(orgId, db)
 
   return NextResponse.json({ success: true })
 }
@@ -134,13 +139,74 @@ export async function PATCH(request: NextRequest) {
     await db.from('knowledge_documents').update({ title }).eq('id', docId).eq('organization_id', orgId)
   }
 
+  // Sync updated knowledge into this firm's Vapi assistant
+  await syncKnowledgeBaseToVapi(orgId, db)
+
   const { data: updated } = await db.from('knowledge_documents').select('*').eq('id', docId).single()
   return NextResponse.json({ document: updated })
 }
 
+// Collects ALL documents for this org and pushes them into their Vapi assistant system prompt
+// This is what ensures the AI always has the latest firm-specific information
+async function syncKnowledgeBaseToVapi(orgId: string, db: any): Promise<void> {
+  try {
+    const { data: aiConfig } = await db
+      .from('organization_ai_configs')
+      .select('vapi_assistant_id')
+      .eq('organization_id', orgId)
+      .single()
+
+    if (!aiConfig?.vapi_assistant_id) return
+
+    const { data: org } = await db
+      .from('organizations')
+      .select('name')
+      .eq('id', orgId)
+      .single()
+
+    const { data: documents } = await db
+      .from('knowledge_documents')
+      .select('title, content_text')
+      .eq('organization_id', orgId)
+      .eq('is_processed', true)
+
+    const { data: practiceAreas } = await db
+      .from('practice_areas')
+      .select('name')
+      .eq('organization_id', orgId)
+      .eq('is_active', true)
+
+    const firmName = org?.name || 'the firm'
+    const practiceAreaNames = (practiceAreas || []).map((p: any) => p.name)
+
+    // Build knowledge context from all this firm's documents only
+    let knowledgeContext = ''
+    if (documents && documents.length > 0) {
+      knowledgeContext = documents
+        .filter((d: any) => d.content_text && d.content_text.length > 10)
+        .map((d: any) => `=== ${d.title} ===\n${d.content_text.slice(0, 3000)}`)
+        .join('\n\n')
+    }
+
+    await updateVapiAssistantKnowledge(
+      aiConfig.vapi_assistant_id,
+      firmName,
+      practiceAreaNames,
+      knowledgeContext
+    )
+
+    console.log(`✅ Vapi assistant updated with knowledge for ${firmName}`)
+  } catch (err: any) {
+    // Non-fatal — document is still saved, Vapi sync can be retried
+    console.error('Vapi knowledge sync failed:', err.message)
+  }
+}
+
 async function processDocument(docId: string, orgId: string, kbId: string, contentText: string, db: any): Promise<void> {
   if (!contentText || contentText.length < 10) {
-    await db.from('knowledge_documents').update({ is_processed: true, chunk_count: 0, processed_at: new Date().toISOString() }).eq('id', docId)
+    await db.from('knowledge_documents').update({
+      is_processed: true, chunk_count: 0, processed_at: new Date().toISOString()
+    }).eq('id', docId)
     return
   }
 
@@ -158,7 +224,7 @@ async function processDocument(docId: string, orgId: string, kbId: string, conte
         knowledge_base_id: kbId,
         content: chunk,
         chunk_index: chunkIndex++,
-        metadata: { chunkTotal: Math.ceil(words.length / (chunkSize - overlap)) }
+        metadata: {}
       })
     }
   }
