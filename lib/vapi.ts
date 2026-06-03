@@ -1,129 +1,158 @@
-export interface VapiAssistantConfig {
-  name: string
-  firstMessage: string
-  systemPrompt: string
-  voiceId?: string
-  language?: string
-  maxDurationSeconds?: number
-}
+const VAPI_API = 'https://api.vapi.ai'
 
-export async function createVapiAssistant(config: VapiAssistantConfig): Promise<string> {
-  const response = await fetch('https://api.vapi.ai/assistant', {
-    method: 'POST',
+// The master template assistant ID — all new assistants are duplicated from this
+const TEMPLATE_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID || 'ab8e47dc-2373-433f-8ba1-208d32c02242'
+
+async function vapiRequest(method: string, path: string, body?: any) {
+  const res = await fetch(`${VAPI_API}${path}`, {
+    method,
     headers: {
       'Authorization': `Bearer ${process.env.VAPI_PRIVATE_KEY}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      name: config.name,
-      firstMessage: config.firstMessage,
-      model: {
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-20250514',
-        systemPrompt: config.systemPrompt,
-        temperature: 0.7
-      },
-      voice: {
-        provider: '11labs',
-        voiceId: config.voiceId || 'jennifer'
-      },
-      transcriber: {
-        provider: 'deepgram',
-        language: config.language || 'en'
-      },
-      maxDurationSeconds: config.maxDurationSeconds || 600,
-      recordingEnabled: true,
-      endCallFunctionEnabled: true,
-      fillersEnabled: true
-    })
+    body: body ? JSON.stringify(body) : undefined
   })
-
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`Failed to create Vapi assistant: ${error}`)
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Vapi ${method} ${path} failed: ${err}`)
   }
-
-  const data = await response.json()
-  return data.id
+  return res.json()
 }
 
+// Fetch the template assistant so we can duplicate its exact settings
+async function getTemplateAssistant() {
+  return vapiRequest('GET', `/assistant/${TEMPLATE_ASSISTANT_ID}`)
+}
+
+// Create a brand new assistant for a firm by duplicating the template
+// and injecting the firm's name into the greeting and system prompt
+export async function createVapiAssistantForOrg(firmName: string): Promise<string> {
+  const template = await getTemplateAssistant()
+
+  // Replace {{firmName}} placeholders with the real firm name
+  const firstMessage = (template.firstMessage || 'Hi, thank you for calling {{firmName}}. How can I help?')
+    .replace(/\{\{firmName\}\}/g, firmName)
+
+  const systemPrompt = (template.model?.messages?.[0]?.content || '')
+    .replace(/\{\{firmName\}\}/g, firmName)
+
+  // Build the new assistant using the exact same settings as the template
+  const newAssistant = await vapiRequest('POST', '/assistant', {
+    name: `${firmName} Receptionist`,
+    firstMessage,
+    model: {
+      ...template.model,
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt
+        }
+      ]
+    },
+    voice: template.voice,
+    transcriber: template.transcriber,
+    maxDurationSeconds: template.maxDurationSeconds || 600,
+    recordingEnabled: template.recordingEnabled ?? true,
+    silenceTimeoutSeconds: template.silenceTimeoutSeconds || 21,
+    endCallMessage: template.endCallMessage || 'Thanks for calling — someone will be in touch shortly.',
+    endCallPhrases: template.endCallPhrases || ['goodbye', 'take care', 'have a good day'],
+    serverUrl: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/vapi`,
+    serverMessages: template.serverMessages || ['end-of-call-report'],
+    clientMessages: template.clientMessages || [],
+    metadata: {},
+  })
+
+  return newAssistant.id
+}
+
+// Update an existing assistant when firm name or knowledge changes
 export async function updateVapiAssistant(
   assistantId: string,
-  config: Partial<VapiAssistantConfig>
+  updates: { firmName?: string; systemPrompt?: string; firstMessage?: string; voiceId?: string }
 ): Promise<void> {
   const body: any = {}
-  if (config.name) body.name = config.name
-  if (config.firstMessage) body.firstMessage = config.firstMessage
-  if (config.systemPrompt) body.model = { systemPrompt: config.systemPrompt }
-  if (config.voiceId) body.voice = { provider: '11labs', voiceId: config.voiceId }
 
-  const response = await fetch(`https://api.vapi.ai/assistant/${assistantId}`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Bearer ${process.env.VAPI_PRIVATE_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  })
+  if (updates.firstMessage) {
+    body.firstMessage = updates.firstMessage.replace(/\{\{firmName\}\}/g, updates.firmName || '')
+  }
 
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`Failed to update Vapi assistant: ${error}`)
+  if (updates.systemPrompt) {
+    body.model = {
+      messages: [{
+        role: 'system',
+        content: updates.systemPrompt.replace(/\{\{firmName\}\}/g, updates.firmName || '')
+      }]
+    }
+  }
+
+  if (updates.voiceId) {
+    body.voice = { provider: '11labs', voiceId: updates.voiceId }
+  }
+
+  await vapiRequest('PATCH', `/assistant/${assistantId}`, body)
+}
+
+// Delete an assistant when a firm is offboarded
+export async function deleteVapiAssistant(assistantId: string): Promise<void> {
+  await vapiRequest('DELETE', `/assistant/${assistantId}`)
+}
+
+// Pass org context into Vapi when a call starts via Twilio
+// This means the end-of-call webhook knows exactly which org the call belongs to
+export function buildVapiCallMetadata(organizationId: string, firmName: string) {
+  return {
+    organizationId,
+    firmName
   }
 }
 
-export async function updateVapiAssistantWithKnowledge(
+export function buildSystemPrompt(firmName: string, practiceAreas: string[], additionalContext?: string): string {
+  return `[Identity]
+You are the receptionist for ${firmName}. You are warm, calm, and natural, ensuring each caller feels genuinely welcomed and cared for. Never mention being AI or a virtual assistant unless asked directly.
+
+[Style]
+Speak in a friendly, conversational tone — never scripted, robotic, or formal.
+Use natural, gentle language. Respond in a single sentence at a time and pause for the caller after each turn.
+Match the caller's energy: softer and more patient for callers who sound stressed or uncertain; more concise and direct for callers who sound rushed or businesslike.
+Never repeat the business name after your opening greeting.
+Use contractions naturally — "I'll", "they're", "you're" — to sound human.
+
+[Opening]
+Open every call with exactly this, once only:
+"Hi, thank you for calling ${firmName}. How can I help?"
+
+[Listening and Follow-Up]
+After the caller explains their reason for calling, acknowledge what they said and ask one thoughtful, relevant follow-up question.
+
+[Explaining Team Availability]
+"The team are with a client at the moment, but I can take your details and make sure the right person calls you back within the next couple of hours."
+
+[Collecting Details]
+Take name and callback number only, one at a time.
+
+[Closing]
+End every call with a single warm, natural phrase:
+"Thanks for calling — someone will be in touch shortly."
+
+${practiceAreas.length > 0 ? `\nPRACTICE AREAS:\n${practiceAreas.join(', ')}` : ''}
+${additionalContext ? `\nFIRM INFORMATION:\n${additionalContext}` : ''}`
+}
+
+// Updates a firm's Vapi assistant with their latest knowledge base content
+// Called every time a document is uploaded, edited, or deleted
+export async function updateVapiAssistantKnowledge(
   assistantId: string,
   firmName: string,
   practiceAreas: string[],
-  knowledgeBaseContext: string
+  knowledgeContext: string
 ): Promise<void> {
-  const systemPrompt = buildSystemPrompt(firmName, practiceAreas, knowledgeBaseContext)
-  await updateVapiAssistant(assistantId, { systemPrompt })
-}
-
-export function buildSystemPrompt(
-  firmName: string,
-  practiceAreas: string[],
-  additionalContext?: string,
-  languages?: string[]
-): string {
-  const langNote = languages && languages.length > 1
-    ? `You can assist callers in: ${languages.join(', ')}. Detect the caller's language and respond in it naturally.`
-    : 'You assist callers in English.'
-
-  return `You are the AI receptionist for ${firmName}, a professional law firm.
-
-Your role is to:
-1. Welcome the caller warmly and professionally
-2. Collect their name, best callback number, and reason for calling
-3. Answer questions about the firm using the knowledge provided below
-4. Reassure callers that a qualified team member will follow up promptly
-5. If the caller wants to book a consultation, note their preferred time
-
-FIRM PRACTICE AREAS:
-${practiceAreas.length > 0 ? practiceAreas.join(', ') : 'General legal services'}
-
-${langNote}
-
-CRITICAL RULES:
-- Never provide specific legal advice — always say a qualified solicitor will advise them
-- Always confirm the callback number clearly by repeating it back
-- If someone mentions urgency, a court date, or deportation — express empathy and note it as urgent
-- Be warm, professional, and concise — do not ramble
-- If you cannot answer a question, say "I'll make sure the team has your question noted for when they call you back"
-- Never make up information about fees, timelines, or outcomes
-
-${additionalContext ? `\nFIRM INFORMATION AND DOCUMENTS:\n${additionalContext}` : ''}
-
-CALL STRUCTURE:
-1. Greet the caller warmly
-2. Ask how you can help
-3. Listen to their matter
-4. Answer any factual questions from the firm information above
-5. Collect: full name, callback number, brief summary of their matter
-6. If urgent, acknowledge the urgency and reassure them the team will prioritise their call
-7. Close: "I've noted all your details and a member of the ${firmName} team will be in touch shortly. Is there anything else before I let you go?"
-
-Always end by confirming you've taken their details and that the team will be in touch.`
+  const systemPrompt = buildSystemPrompt(firmName, practiceAreas, knowledgeContext)
+  await vapiRequest('PATCH', `/assistant/${assistantId}`, {
+    model: {
+      messages: [{
+        role: 'system',
+        content: systemPrompt
+      }]
+    }
+  })
 }
