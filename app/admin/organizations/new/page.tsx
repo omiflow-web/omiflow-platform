@@ -2,25 +2,20 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Check, Loader } from 'lucide-react'
 
 export default function NewOrganizationPage() {
   const router = useRouter()
+  const [form, setForm] = useState({
+    name: '', slug: '', industry: 'immigration_law',
+    ownerEmail: '', ownerFirstName: '', ownerLastName: '', ownerPassword: ''
+  })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState<any>(null)
+  const [result, setResult] = useState<any>(null)
 
-  const [form, setForm] = useState({
-    name: '',
-    industry: 'immigration_law',
-    ownerFirstName: '',
-    ownerLastName: '',
-    ownerEmail: '',
-    ownerPhone: '',
-    phoneNumber: ''
-  })
-
-  function update(field: string, value: string) {
-    setForm(prev => ({ ...prev, [field]: value }))
+  function autoSlug(name: string) {
+    return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -42,45 +37,49 @@ export default function NewOrganizationPage() {
       return
     }
 
-    setSuccess(data)
+    setResult(data)
     setLoading(false)
   }
 
-  if (success) {
+  if (result) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
-        <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 max-w-md w-full">
-          <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
-            <span className="text-green-600 text-xl">✓</span>
+      <div className="min-h-screen bg-gray-50 p-8 flex items-center justify-center">
+        <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-sm border border-gray-100">
+          <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Check className="w-6 h-6 text-green-600" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-1">Organization Created</h2>
-          <p className="text-gray-500 text-sm mb-6">{success.organization.name} is now live on Omiflow.</p>
+          <h2 className="text-lg font-semibold text-gray-900 text-center mb-4">{result.organization.name} created</h2>
 
-          <div className="bg-gray-50 rounded-lg p-4 text-sm space-y-2 mb-6">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Login URL</span>
-              <span className="font-medium">{process.env.NEXT_PUBLIC_APP_URL}/auth/login</span>
+          <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm mb-4">
+            <div><span className="text-gray-500">Org ID:</span> <span className="font-mono text-xs">{result.organization.id}</span></div>
+            <div>
+              <span className="text-gray-500">Vapi Assistant:</span>{' '}
+              {result.vapiAssistantId ? (
+                <span className="font-mono text-xs text-green-700">{result.vapiAssistantId}</span>
+              ) : (
+                <span className="text-red-600 text-xs">Failed to create — add manually in Vapi</span>
+              )}
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Email</span>
-              <span className="font-medium">{form.ownerEmail}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Temp Password</span>
-              <span className="font-mono font-medium">{success.tempPassword}</span>
-            </div>
+            {result.ownerUser && (
+              <>
+                <div><span className="text-gray-500">Login email:</span> <span className="font-medium">{result.ownerUser.email}</span></div>
+                <div><span className="text-gray-500">Password:</span> <span className="font-mono">{result.ownerUser.password}</span></div>
+              </>
+            )}
           </div>
 
-          <p className="text-xs text-gray-400 mb-6">A welcome email has been sent with these credentials.</p>
+          <div className="text-xs text-gray-400 bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+            Save the login credentials above — the password won't be shown again.
+          </div>
 
           <div className="flex gap-3">
-            <button onClick={() => router.push('/admin')}
-              className="flex-1 bg-omiflow-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-omiflow-700">
-              Back to Admin
+            <button onClick={() => router.push(`/admin/organizations/${result.organization.id}`)}
+              className="flex-1 bg-omiflow-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-omiflow-700">
+              Open Org →
             </button>
-            <button onClick={() => { setSuccess(null); setForm({ name: '', industry: 'immigration_law', ownerFirstName: '', ownerLastName: '', ownerEmail: '', ownerPhone: '', phoneNumber: '' }) }}
-              className="flex-1 border border-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">
-              Create Another
+            <button onClick={() => router.push('/admin')}
+              className="flex-1 border border-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50">
+              Back to Admin
             </button>
           </div>
         </div>
@@ -90,84 +89,88 @@ export default function NewOrganizationPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-2xl mx-auto">
-        <div className="mb-6">
-          <a href="/admin" className="text-sm text-gray-500 hover:text-gray-700">← Back to Admin</a>
-          <h1 className="text-2xl font-bold text-gray-900 mt-2">New Organization</h1>
-          <p className="text-gray-500 text-sm">Onboard a new client firm to Omiflow</p>
+      <div className="max-w-lg mx-auto">
+        <a href="/admin" className="text-sm text-gray-500 hover:text-gray-700">← Back to Admin</a>
+        <h1 className="text-2xl font-bold text-gray-900 mt-4 mb-1">Create New Organisation</h1>
+        <p className="text-sm text-gray-500 mb-6">
+          This will create the firm's account, their own Vapi assistant, and their dashboard login.
+        </p>
+
+        {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 mb-4">{error}</div>}
+
+        <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+          <h2 className="font-semibold text-gray-900 text-sm">Firm Details</h2>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Firm Name *</label>
+            <input value={form.name}
+              onChange={e => setForm(p => ({ ...p, name: e.target.value, slug: autoSlug(e.target.value) }))}
+              required placeholder="Morrison Immigration Law"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Slug *</label>
+            <input value={form.slug}
+              onChange={e => setForm(p => ({ ...p, slug: e.target.value }))}
+              required placeholder="morrison-immigration-law"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
+            <p className="text-xs text-gray-400 mt-1">Auto-generated from name. Used in the dashboard URL.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+            <select value={form.industry} onChange={e => setForm(p => ({ ...p, industry: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500">
+              <option value="immigration_law">Immigration Law</option>
+              <option value="family_law">Family Law</option>
+              <option value="personal_injury">Personal Injury</option>
+              <option value="criminal_defence">Criminal Defence</option>
+              <option value="employment_law">Employment Law</option>
+              <option value="general_legal">General Legal</option>
+            </select>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">{error}</div>
-          )}
+        <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4 mt-4">
+          <h2 className="font-semibold text-gray-900 text-sm">Owner Account <span className="text-gray-400 font-normal">(optional)</span></h2>
 
-          {/* Firm Details */}
-          <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-            <h2 className="font-semibold text-gray-900">Firm Details</h2>
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Firm Name *</label>
-              <input value={form.name} onChange={e => update('name', e.target.value)} required
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500"
-                placeholder="Morrison Immigration Law" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+              <input value={form.ownerFirstName} onChange={e => setForm(p => ({ ...p, ownerFirstName: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-              <select value={form.industry} onChange={e => update('industry', e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500">
-                <option value="immigration_law">Immigration Law</option>
-                <option value="family_law">Family Law</option>
-                <option value="personal_injury">Personal Injury</option>
-                <option value="conveyancing">Conveyancing</option>
-                <option value="general_law">General Law</option>
-                <option value="accounting">Accounting</option>
-                <option value="healthcare">Healthcare</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Twilio Phone Number</label>
-              <input value={form.phoneNumber} onChange={e => update('phoneNumber', e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500"
-                placeholder="+12125550101" />
-              <p className="text-xs text-gray-400 mt-1">The Twilio number assigned to this client</p>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+              <input value={form.ownerLastName} onChange={e => setForm(p => ({ ...p, ownerLastName: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
             </div>
           </div>
 
-          {/* Owner Details */}
-          <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-            <h2 className="font-semibold text-gray-900">Firm Owner</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
-                <input value={form.ownerFirstName} onChange={e => update('ownerFirstName', e.target.value)} required
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
-                <input value={form.ownerLastName} onChange={e => update('ownerLastName', e.target.value)} required
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-              <input type="email" value={form.ownerEmail} onChange={e => update('ownerEmail', e.target.value)} required
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500"
-                placeholder="owner@firm.com" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone (for call forwarding)</label>
-              <input value={form.ownerPhone} onChange={e => update('ownerPhone', e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500"
-                placeholder="+12125550199" />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input type="email" value={form.ownerEmail} onChange={e => setForm(p => ({ ...p, ownerEmail: e.target.value }))}
+              placeholder="owner@firm.com"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
           </div>
 
-          <button type="submit" disabled={loading}
-            className="w-full bg-omiflow-600 hover:bg-omiflow-700 text-white font-medium py-3 rounded-lg text-sm transition-colors disabled:opacity-50">
-            {loading ? 'Creating organization...' : 'Create Organization & Send Welcome Email'}
-          </button>
-        </form>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <input type="text" value={form.ownerPassword} onChange={e => setForm(p => ({ ...p, ownerPassword: e.target.value }))}
+              placeholder="Leave blank to auto-generate"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-omiflow-500" />
+          </div>
+        </div>
+
+        <div className="bg-omiflow-50 border border-omiflow-100 rounded-xl p-4 mt-4 text-sm text-omiflow-800">
+          Creating this organisation will automatically create a dedicated Vapi assistant for this firm using your template assistant as the base. The firm's name will be injected into the greeting and system prompt.
+        </div>
+
+        <button onClick={handleSubmit} disabled={loading || !form.name || !form.slug}
+          className="w-full mt-4 bg-omiflow-600 text-white font-medium py-3 rounded-xl text-sm hover:bg-omiflow-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+          {loading ? <><Loader className="w-4 h-4 animate-spin" />Creating organisation and Vapi assistant...</> : 'Create Organisation'}
+        </button>
       </div>
     </div>
   )
