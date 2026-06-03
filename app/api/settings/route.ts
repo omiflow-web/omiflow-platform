@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
 
         if (aiConfig?.vapi_assistant_id) {
           const practiceAreaNames = (practiceAreas || []).map((p: any) => p.name)
-          const systemPrompt = buildSystemPrompt(org?.name || '', practiceAreaNames)
+          const systemPrompt = buildSystemPrompt(org?.name || '', practiceAreaNames, '')
           await updateVapiAssistant(aiConfig.vapi_assistant_id, {
             firstMessage: data.greeting_message || aiConfig.greeting_message,
             systemPrompt: data.system_prompt || systemPrompt
