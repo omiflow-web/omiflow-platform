@@ -28,20 +28,18 @@ export async function createVapiAssistantForOrg(firmName: string): Promise<strin
   const firstMessage = `Hi, thank you for calling ${firmName}. How can I help?`
   const systemPrompt = buildSystemPrompt(firmName, [], '')
 
+  // Copy the entire template exactly, then override only what changes per firm
+  // This ensures voice settings, model settings, and all advanced config are identical
+  const { id, orgId, createdAt, updatedAt, name: _name, firstMessage: _fm, ...templateRest } = template
+
   const newAssistant = await vapiRequest('POST', '/assistant', {
+    ...templateRest,
     name: `${firmName} Receptionist`,
     firstMessage,
     model: {
       ...template.model,
       messages: [{ role: 'system', content: systemPrompt }]
     },
-    voice: template.voice,
-    transcriber: template.transcriber,
-    maxDurationSeconds: template.maxDurationSeconds || 600,
-    recordingEnabled: template.recordingEnabled ?? true,
-    silenceTimeoutSeconds: template.silenceTimeoutSeconds || 21,
-    endCallMessage: template.endCallMessage || 'Thanks for calling — someone will be in touch shortly.',
-    endCallPhrases: template.endCallPhrases || ['goodbye', 'take care', 'have a good day'],
     serverUrl: `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/vapi`,
     serverMessages: ['end-of-call-report'],
   })
