@@ -19,54 +19,43 @@ export async function POST(request: NextRequest) {
     const durationSeconds = Math.round(message.durationSeconds || 0)
     const callerNumber = message.call?.customer?.number || 'unknown'
     const assistantId = message.call?.assistantId
-
-    // Try to get org ID from metadata first (set by Twilio webhook)
-    // This is the reliable path — org ID was passed when the call started
     const metadataOrgId = message.call?.metadata?.organizationId
 
-    console.log(`📞 Vapi webhook: callId=${vapiCallId} caller=${callerNumber} duration=${durationSeconds}s orgFromMeta=${metadataOrgId}`)
+    console.log(`📞 Vapi webhook: callId=${vapiCallId} caller=${callerNumber} duration=${durationSeconds}s`)
 
     const db = createServiceClient() as any
 
-    // Resolve organization ID — three fallback methods in order of reliability
+    // Resolve org — 3 methods in order of reliability
     let organizationId: string | null = null
 
-    // Method 1: org ID passed directly in metadata (most reliable — set by Twilio webhook)
     if (metadataOrgId) {
       organizationId = metadataOrgId
-      console.log(`✅ Org resolved from metadata: ${organizationId}`)
     }
 
-    // Method 2: find existing call record created by Twilio webhook
     if (!organizationId && vapiCallId) {
       const { data: callRecord } = await db
         .from('calls')
         .select('organization_id')
         .eq('vapi_call_id', vapiCallId)
         .single()
-      if (callRecord?.organization_id) {
-        organizationId = callRecord.organization_id
-        console.log(`✅ Org resolved from call record: ${organizationId}`)
-      }
+      if (callRecord?.organization_id) organizationId = callRecord.organization_id
     }
 
-    // Method 3: look up org by assistant ID (works for direct Vapi test calls)
     if (!organizationId && assistantId) {
       const { data: aiConfig } = await db
         .from('organization_ai_configs')
         .select('organization_id')
         .eq('vapi_assistant_id', assistantId)
         .single()
-      if (aiConfig?.organization_id) {
-        organizationId = aiConfig.organization_id
-        console.log(`✅ Org resolved from assistant ID: ${organizationId}`)
-      }
+      if (aiConfig?.organization_id) organizationId = aiConfig.organization_id
     }
 
     if (!organizationId) {
       console.error('❌ Could not resolve organization for call')
       return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
     }
+
+    console.log(`✅ Org resolved: ${organizationId}`)
 
     // Find or create call record
     let callId: string
@@ -103,27 +92,33 @@ export async function POST(request: NextRequest) {
 
     // Save recording
     if (recordingUrl) {
-      await db.from('recordings').insert({
-        organization_id: organizationId,
-        call_id: callId,
-        url: recordingUrl,
-        duration_seconds: durationSeconds
-      }).catch(console.error)
+      try {
+        await db.from('recordings').insert({
+          organization_id: organizationId,
+          call_id: callId,
+          url: recordingUrl,
+          duration_seconds: durationSeconds
+        })
+      } catch (e) { console.error('Recording save failed:', e) }
     }
 
     // Save transcript
     if (transcript) {
-      await db.from('transcripts').insert({
-        organization_id: organizationId,
-        call_id: callId,
-        content: transcript,
-        content_structured: message.artifact?.messages || null,
-        word_count: transcript.split(' ').length
-      }).catch(console.error)
+      try {
+        await db.from('transcripts').insert({
+          organization_id: organizationId,
+          call_id: callId,
+          content: transcript,
+          content_structured: message.artifact?.messages || null,
+          word_count: transcript.split(' ').length
+        })
+      } catch (e) { console.error('Transcript save failed:', e) }
     }
 
-    // Run AI pipeline if transcript is long enough to analyse
-    if (transcript && transcript.length > 50) {
+    // Run AI pipeline
+    if (transcript && transcript.length > 20) {
+      console.log(`🤖 Running AI pipeline for call ${callId}`)
+
       const { data: practiceAreas } = await db
         .from('practice_areas')
         .select('name')
@@ -139,53 +134,57 @@ export async function POST(request: NextRequest) {
       await saveAIResults(aiResult, organizationId, callId, leadId)
       await createAutoTasks(organizationId, leadId, callId, aiResult)
 
-      // Notifications for urgent leads
+      // Urgent notifications
       if (aiResult.leadQuality === 'critical' || aiResult.sentiment === 'distressed') {
-        const { data: orgUsers } = await db.from('users').select('id').eq('organization_id', organizationId)
-        for (const user of orgUsers || []) {
-          await db.from('notifications').insert({
-            organization_id: organizationId,
-            user_id: user.id,
-            lead_id: leadId,
-            call_id: callId,
-            title: '🚨 Urgent lead requires immediate attention',
-            message: `${aiResult.callerName || callerNumber} — ${aiResult.practiceArea}. ${aiResult.recommendation}`,
-            type: 'urgent',
-            channel: 'in_app'
-          }).catch(console.error)
+        try {
+          const { data: orgUsers } = await db.from('users').select('id').eq('organization_id', organizationId)
+          for (const user of orgUsers || []) {
+            await db.from('notifications').insert({
+              organization_id: organizationId,
+              user_id: user.id,
+              lead_id: leadId,
+              call_id: callId,
+              title: '🚨 Urgent lead requires immediate attention',
+              message: `${aiResult.callerName || callerNumber} — ${aiResult.practiceArea}. ${aiResult.recommendation}`,
+              type: 'urgent',
+              channel: 'in_app'
+            })
+          }
+        } catch (e) { console.error('Notification failed:', e) }
+      }
+
+      // Email summary
+      try {
+        const { data: settings } = await db.from('organization_settings').select('*').eq('organization_id', organizationId).single()
+        const { data: org } = await db.from('organizations').select('name').eq('id', organizationId).single()
+
+        if (settings?.auto_email_enabled && settings?.notification_email) {
+          await sendCallSummaryEmail(
+            [settings.notification_email],
+            org?.name || 'The firm',
+            callerNumber,
+            aiResult,
+            durationSeconds
+          )
         }
-      }
 
-      // Email summary to firm
-      const { data: settings } = await db.from('organization_settings').select('*').eq('organization_id', organizationId).single()
-      const { data: org } = await db.from('organizations').select('name').eq('id', organizationId).single()
+        // SMS to caller
+        if (settings?.auto_sms_enabled && callerNumber !== 'unknown') {
+          await sendConfirmationSMS(
+            callerNumber,
+            org?.name || 'The firm',
+            settings?.callback_promise_hours || 2,
+            settings?.sms_confirmation_template
+          )
+        }
+      } catch (e) { console.error('Email/SMS failed:', e) }
 
-      if (settings?.auto_email_enabled && settings?.notification_email) {
-        await sendCallSummaryEmail(
-          [settings.notification_email],
-          org?.name || 'The firm',
-          callerNumber,
-          aiResult,
-          durationSeconds
-        ).catch(console.error)
-      }
-
-      // SMS to caller
-      if (settings?.auto_sms_enabled && callerNumber !== 'unknown') {
-        await sendConfirmationSMS(
-          callerNumber,
-          org?.name || 'The firm',
-          settings?.callback_promise_hours || 2,
-          settings?.sms_confirmation_template
-        ).catch(console.error)
-      }
-
-      console.log(`✅ Call processed: org=${organizationId} call=${callId} lead=${leadId} quality=${aiResult.leadQuality}`)
+      console.log(`✅ Call fully processed: call=${callId} lead=${leadId} quality=${aiResult.leadQuality}`)
       return NextResponse.json({ success: true, callId, leadId, organizationId })
     }
 
-    console.log(`⚠️ Call ${callId} had no transcript — saved but not analysed`)
-    return NextResponse.json({ success: true, callId, organizationId, note: 'No transcript' })
+    console.log(`⚠️ Call ${callId} saved — transcript too short for AI analysis`)
+    return NextResponse.json({ success: true, callId, organizationId })
 
   } catch (error: any) {
     console.error('Vapi webhook error:', error)
