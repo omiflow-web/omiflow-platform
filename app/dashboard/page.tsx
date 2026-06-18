@@ -69,13 +69,20 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-5 px-4 pt-4 md:px-0 md:pt-0 md:space-y-6 pb-24 md:pb-6">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Good {timeOfDay()}, {firstName}</h1>
-        <p className="text-xs text-gray-500 mt-1 md:text-sm">
-          {needsAttention > 0
-            ? `${needsAttention} ${needsAttention === 1 ? 'opportunity needs' : 'opportunities need'} your attention right now`
-            : 'Everything is up to date — no opportunities need attention'}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Good {timeOfDay()}, {firstName}</h1>
+          <p className="text-xs text-gray-500 mt-1 md:text-sm">
+            {needsAttention > 0
+              ? `${needsAttention} ${needsAttention === 1 ? 'enquiry needs' : 'enquiries need'} your attention right now`
+              : 'Everything is up to date — no enquiries need attention'}
+          </p>
+        </div>
+        <Link href="/dashboard/opportunities/new"
+          className="hidden md:flex items-center gap-2 bg-omiflow-600 hover:bg-omiflow-700 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors flex-shrink-0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Enquiry
+        </Link>
       </div>
 
       {/* Attention strip */}
@@ -89,11 +96,11 @@ export default async function DashboardPage() {
 
       {/* SECTION GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
-        <Section id="new" title="New Opportunities" subtitle="Recently entered enquiries" items={newOpps} tone="indigo" empty="No new enquiries" />
+        <Section id="new" title="New Enquiries" subtitle="Recently entered enquiries" items={newOpps} tone="indigo" empty="No new enquiries" />
         <Section id="followup" title="Awaiting Follow-Up" subtitle="Action is due" items={awaitingFollowUp} tone="orange" empty="Nothing due right now" showAction />
-        <Section id="active" title="Active Opportunities" subtitle="Currently progressing" items={activeOpps} tone="indigo" empty="No active opportunities" />
+        <Section id="active" title="Active Enquiries" subtitle="Currently progressing" items={activeOpps} tone="indigo" empty="No active enquiries" />
         <Section id="appointments" title="Appointments Pending" subtitle="Upcoming" items={appointmentsPending} tone="green" empty="No upcoming appointments" showAppt />
-        <Section id="stalled" title="Stalled Opportunities" subtitle="Need attention — no recent activity" items={stalled} tone="red" empty="Nothing stalled" showStalled />
+        <Section id="stalled" title="Stalled Enquiries" subtitle="Need attention — no recent activity" items={stalled} tone="red" empty="Nothing stalled" showStalled />
         <Section id="won" title="Won" subtitle="Converted to customers" items={won} tone="green" empty="No customers yet" />
       </div>
 
