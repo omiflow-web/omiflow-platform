@@ -49,19 +49,19 @@ module.exports = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Omiflow brand
+        // Omiflow brand - black / white / purple
         omiflow: {
-          50:  "#f0f4ff",
-          100: "#e0e9ff",
-          200: "#c7d7fe",
-          300: "#a5bbfc",
-          400: "#8098f9",
-          500: "#6172f3",
-          600: "#4a52e8",
-          700: "#3d42ce",
-          800: "#3237a6",
-          900: "#2e3484",
-          950: "#1c1f50",
+          50:  "#f5f3ff",
+          100: "#ede9fe",
+          200: "#ddd6fe",
+          300: "#c4b5fd",
+          400: "#a78bfa",
+          500: "#8b5cf6",
+          600: "#7c3aed",
+          700: "#6d28d9",
+          800: "#5b21b6",
+          900: "#4c1d95",
+          950: "#2e1065",
         }
       },
       borderRadius: {
