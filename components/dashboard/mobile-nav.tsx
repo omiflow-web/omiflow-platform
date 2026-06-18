@@ -1,22 +1,19 @@
-'use client'
+"use client"
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Phone, Users, CheckSquare, Settings, LogOut } from 'lucide-react'
-import { createClient } from '@/lib/supabase'
+import { usePathname } from 'next/navigation'
+import { LayoutDashboard, Phone, Users, CheckSquare, Settings } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard', label: 'Home', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/calls', label: 'Calls', icon: Phone },
-  { href: '/dashboard/leads', label: 'Leads', icon: Users },
+  { href: '/dashboard/leads', label: 'Enquiries', icon: Users },
   { href: '/dashboard/tasks', label: 'Tasks', icon: CheckSquare },
   { href: '/dashboard/settings/ai-config', label: 'Settings', icon: Settings },
 ]
 
 export default function MobileNav() {
   const pathname = usePathname()
-  const router = useRouter()
-  const supabase = createClient()
 
   function isActive(href: string, exact?: boolean) {
     if (exact) return pathname === href
