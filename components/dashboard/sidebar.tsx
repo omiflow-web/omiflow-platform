@@ -1,11 +1,11 @@
-'use client'
+"use client"
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Phone, Users, MessageSquare,
   Calendar, CheckSquare, BarChart3, BookOpen,
-  LogOut, Bot, Zap, CreditCard
+  LogOut, Bot, Zap, CreditCard, Plus
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { getPermissions, RoleName } from '@/lib/permissions'
@@ -31,7 +31,7 @@ export default function DashboardSidebar({ user, org }: { user: any; org: any })
   const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true, show: true },
     { href: '/dashboard/calls', label: 'Calls', icon: Phone, show: true },
-    { href: '/dashboard/leads', label: 'Leads', icon: Users, show: true },
+    { href: '/dashboard/leads', label: 'Enquiries', icon: Users, show: true },
     { href: '/dashboard/communications', label: 'Communications', icon: MessageSquare, show: true },
     { href: '/dashboard/calendar', label: 'Calendar', icon: Calendar, show: true },
     { href: '/dashboard/tasks', label: 'Tasks', icon: CheckSquare, show: true },
@@ -59,6 +59,14 @@ export default function DashboardSidebar({ user, org }: { user: any; org: any })
           <div className="font-bold text-gray-900 text-sm leading-tight">Omiflow</div>
           <div className="text-xs text-gray-400 truncate">{org?.name || 'Your Firm'}</div>
         </div>
+      </div>
+
+      <div className="px-3 pt-4">
+        <Link href="/dashboard/opportunities/new" prefetch={true}
+          className="flex items-center justify-center gap-2 w-full bg-omiflow-600 hover:bg-omiflow-700 text-white text-sm font-medium px-3 py-2.5 rounded-lg transition-colors">
+          <Plus className="w-4 h-4" />
+          New Enquiry
+        </Link>
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
